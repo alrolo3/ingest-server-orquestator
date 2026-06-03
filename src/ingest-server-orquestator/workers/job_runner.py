@@ -10,8 +10,8 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.chart_extraction_options import ChartExtractionModelOptions
 from docling.datamodel.layout_model_specs import DOCLING_LAYOUT_HERON_101
 from docling.datamodel.pipeline_options import ThreadedPdfPipelineOptions, CodeFormulaVlmOptions, LayoutOptions, \
-    granite_picture_description, OcrAutoOptions, TableStructureOptions, \
-    TableFormerMode
+    granite_picture_description, TableStructureOptions, \
+    TableFormerMode, OcrAutoOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 from docling_core.types.doc import ImageRefMode
@@ -49,9 +49,9 @@ def job_runner(job: Job) -> None:
         # ---------------------------------------------------------------------
         # Picture classification / description / chart extraction
         # ---------------------------------------------------------------------
-        do_picture_classification=True,
-        do_picture_description=True,
-        do_chart_extraction=True,
+        do_picture_classification=False,
+        do_picture_description=False,
+        do_chart_extraction=False,
 
 
         # picture_classification_options= DocumentPictureClassifierOptions(),
@@ -80,15 +80,16 @@ def job_runner(job: Job) -> None:
         # ---------------------------------------------------------------------
         # OCR
         # ---------------------------------------------------------------------
+
         ocr_options=OcrAutoOptions(
             lang=[],  # example: ["en", "es"] or ["es"]
             force_full_page_ocr=False,
-            bitmap_area_threshold=0.05,
         ),
 
         # ---------------------------------------------------------------------
         # Layout analysis
         # ---------------------------------------------------------------------
+
 
         layout_options=LayoutOptions(
             keep_empty_clusters=False,
@@ -112,8 +113,8 @@ def job_runner(job: Job) -> None:
         "Describe the image in four sentences. Be concise and accurate."
     )
 
-    #threaded_backend_options = ThreadedDoclingParseBackendOptions(parser_threads=4, enable_remote_fetch=True, enable_local_fetch=False, kind="pdf")
-    backend_options = PdfBackendOptions(enable_remote_fetch=True, enable_local_fetch=False, kind="pdf")
+    #backend_options = ThreadedDoclingParseBackendOptions(parser_threads=4, enable_remote_fetch=True, enable_local_fetch=False, release_native_memory_every_n_pages=256, kind="threaded-docling-parse")
+    backend_options = PdfBackendOptions(enable_remote_fetch=True, enable_local_fetch=False, kind="pdf",)
 
     options = PdfFormatOption(
         backend=DoclingParseDocumentBackend,
