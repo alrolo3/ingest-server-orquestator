@@ -20,6 +20,16 @@ class InboundWorker:
             max_tasks_per_child=10,
         )
 
+    def _on_job_done(self, future):
+        try:
+            future.result()
+            print("Job completed successfully", flush=True)
+        except Exception:
+            import traceback
+            print("Job failed:", flush=True)
+            traceback.print_exc()
+
+
     def run_forever(self) -> None:
         while not self.stop_event.is_set():
             try:
@@ -29,3 +39,4 @@ class InboundWorker:
 
             future = self.process_pool.submit(job_runner, job)
             future.add_done_callback(lambda _: self.queue.queue.task_done())
+            future.add_done_callback(self._on_job_done)

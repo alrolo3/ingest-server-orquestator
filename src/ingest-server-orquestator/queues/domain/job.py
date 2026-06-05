@@ -12,6 +12,7 @@ class Job:
     job_id: str
     parser_type: str
     input_data: dict[str, Any]
+    chunker_type: str
     settings: dict[str, Any] = field(default_factory=dict)
     status: str = "queued"
     created_at: str = field(
@@ -23,6 +24,7 @@ class Job:
         cls,
         parser_type: str,
         input_data: dict[str, Any],
+        chunker_type: str,
         settings: dict[str, Any] | None = None,
     ) -> "Job":
         return cls(
@@ -30,6 +32,7 @@ class Job:
             parser_type=parser_type,
             input_data=input_data,
             settings=settings or {},
+            chunker_type=chunker_type
         )
 
     def to_queue_message(self) -> dict[str, Any]:
@@ -40,6 +43,7 @@ class Job:
             "settings": self.settings,
             "status": self.status,
             "created_at": self.created_at,
+            "chunker_type": self.chunker_type
         }
 
     def to_record(self) -> dict[str, str]:
@@ -50,6 +54,7 @@ class Job:
             "settings_json": json.dumps(self.settings),
             "status": self.status,
             "created_at": self.created_at,
+            "chunker_type": self.chunker_type
         }
 
     @classmethod

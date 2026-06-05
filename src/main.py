@@ -48,8 +48,9 @@ async def say_hello(name: str):
 async def ingest_file(request: Request):
     server_config = request.app.state.server_config
     job = Job.create(
-        parser_type="file",
+        parser_type="docling",
         input_data={"source": "api"},
+        chunker_type="token",
         settings={"queue": server_config.inbound_queue_name},
     )
     # queue_message = job.to_queue_message()

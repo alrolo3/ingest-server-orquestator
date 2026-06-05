@@ -2,3 +2,7 @@ __pycache__/
 *.py[cod]
 .venv/
 .serena/
+.codex/
+hf_token
+src/Hands_On_Red_Team_Tactics___A_practical.pdf
+.agents/

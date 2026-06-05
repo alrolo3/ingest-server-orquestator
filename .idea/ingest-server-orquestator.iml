@@ -5,6 +5,9 @@
       <sourceFolder url="file://$MODULE_DIR$/src/ingest-server-orquestator" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/src/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/.codex" />
+      <excludeFolder url="file://$MODULE_DIR$/.idea/httpRequests" />
+      <excludeFolder url="file://$MODULE_DIR$/.serena" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (ingest-server-orquestator) (2)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
