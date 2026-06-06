@@ -1,0 +1,81 @@
+services:
+  ingest-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ingest-server-orquestator:latest
+    container_name: ingest-server-orquestator-api
+    restart: unless-stopped
+    command:
+      - python
+      - -m
+      - uvicorn
+      - src.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    ports:
+      - "${INGEST_API_PORT:-8001}:8001"
+    environment:
+      APP_NAME: "${APP_NAME:-ingest-server-orquestator}"
+      APP_ENV: "${APP_ENV:-local}"
+      INBOUND_QUEUE_NAME: "${INBOUND_QUEUE_NAME:-inbound}"
+      CHUNK_MAX_TOKENS: "${CHUNK_MAX_TOKENS:-2048}"
+      TOKENIZER_PATH: "${TOKENIZER_PATH:-/datastore/models/tokenizers/qwen3-embedding-4b/}"
+      CUDA_DEVICE_ORDER: "${CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
+      PHYSICAL_CUDA_DEVICE: "${PHYSICAL_CUDA_DEVICE:-4}"
+      CUDA_VISIBLE_DEVICES: "${CUDA_VISIBLE_DEVICES:-4}"
+      LOGICAL_CUDA_DEVICE_INDEX: "${LOGICAL_CUDA_DEVICE_INDEX:-0}"
+      DOCLING_DEVICE: "${DOCLING_DEVICE:-cuda:0}"
+      ELASTIC_URL: "${ELASTIC_URL:-https://elasticsearch-gpu-indexer:9200}"
+      ELASTIC_HOSTS: "${ELASTIC_HOSTS:-https://elasticsearch-gpu-indexer:9200}"
+      ELASTIC_API_KEY: "${ELASTIC_API_KEY-aa}"
+      ELASTIC_INDEX_NAME: "${ELASTIC_INDEX_NAME:-open-rag-embeddings-v3}"
+      ELASTIC_PIPELINE_NAME: "${ELASTIC_PIPELINE_NAME:-open_rag_embeddings_v3_multilingual_semantic_pipeline}"
+      ELASTIC_INFERENCE_ID: "${ELASTIC_INFERENCE_ID:-qwen3-embedding-4b}"
+      ELASTIC_VERIFY_CERTS: "${ELASTIC_VERIFY_CERTS:-false}"
+      ELASTIC_SSL_SHOW_WARN: "${ELASTIC_SSL_SHOW_WARN:-false}"
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}"
+    volumes:
+      - /datastore/models:/datastore/models:ro
+      - ingest_uploads:/tmp/ingest-server-orquestator/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    gpus: all
+    networks:
+      - ingest
+      - exp101_ai_gateway
+
+  ingest-gradio:
+    image: ingest-server-orquestator:latest
+    container_name: ingest-server-orquestator-gradio
+    restart: unless-stopped
+    depends_on:
+      - ingest-api
+    command:
+      - python
+      - gradio_file_ingest/app.py
+    ports:
+      - "${GRADIO_SERVER_PORT:-7860}:7860"
+    environment:
+      INGEST_API_URL: "${INGEST_API_URL:-http://ingest-api:8001}"
+      INGEST_FILE_PATH: "${INGEST_FILE_PATH:-/api/v1/ingest/file}"
+      INGEST_JOBS_PATH: "${INGEST_JOBS_PATH:-/api/v1/ingest/jobs}"
+      INGEST_POLL_SECONDS: "${INGEST_POLL_SECONDS:-3}"
+      INGEST_TIMEOUT_SECONDS: "${INGEST_TIMEOUT_SECONDS:-60}"
+      GRADIO_SERVER_NAME: "${GRADIO_SERVER_NAME:-0.0.0.0}"
+      GRADIO_SERVER_PORT: "${GRADIO_SERVER_PORT:-7860}"
+    networks:
+      - ingest
+
+volumes:
+  ingest_uploads:
+
+networks:
+  ingest:
+    driver: bridge
+  exp101_ai_gateway:
+    external: true
+    name: "${EXP101_GATEWAY_NETWORK:-exp101_ai_gateway}"
