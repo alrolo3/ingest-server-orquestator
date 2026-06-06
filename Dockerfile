@@ -21,14 +21,15 @@ RUN apt-get update && \
       libxrender1 && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./requirements.txt
+COPY ingest-server-orquestator/requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip && \
     python -m pip install -r requirements.txt
 
-COPY src ./src
-COPY gradio_file_ingest ./gradio_file_ingest
+COPY ingest-server-orquestator/src ./src
+COPY ingest-server-orquestator/gradio_file_ingest ./gradio_file_ingest
 
-RUN mkdir -p /tmp/ingest-server-orquestator/uploads
+RUN mkdir -p /datastore/experimento-101/ingest-uploads \
+    /datastore/experimento-101/ingest-outputs
 
 EXPOSE 8001 7860
 

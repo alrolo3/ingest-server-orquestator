@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
+import logging
 import mimetypes
+from os import getenv
 from multiprocessing import Manager
 from multiprocessing.connection import Listener
 from pathlib import Path
 import shutil
 import sys
-from tempfile import gettempdir
 from threading import Thread, Event
 from uuid import uuid4
 
@@ -34,7 +35,15 @@ from queues.queue_local import put_item
 from workers.inbound_worker import InboundWorker
 
 
-UPLOAD_DIR = Path(gettempdir()) / "ingest-server-orquestator" / "uploads"
+logging.basicConfig(
+    level=getenv("INGEST_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    force=True,
+)
+LOGGER = logging.getLogger("ingest-server-orquestator.api")
+UPLOAD_DIR = Path(
+    getenv("INGEST_UPLOAD_DIR", "/datastore/experimento-101/ingest-uploads")
+)
 
 
 def _build_metrics_store() -> tuple[object | None, JobMetricsStore]:
@@ -83,6 +92,12 @@ def _save_upload(file: UploadFile, filename: str) -> tuple[Path, int]:
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     fastapi_app.state.server_config = load_server_config()
+    LOGGER.info(
+        "Starting ingest API app=%s env=%s upload_dir=%s",
+        fastapi_app.state.server_config.app_name,
+        fastapi_app.state.server_config.environment,
+        UPLOAD_DIR,
+    )
     fastapi_app.state.metrics_manager, fastapi_app.state.metrics_store = (
         _build_metrics_store()
     )
@@ -95,6 +110,7 @@ async def lifespan(fastapi_app: FastAPI):
         daemon=True,
     )
     inbound_thread.start()
+    LOGGER.info("Inbound worker thread started")
 
     fastapi_app.state.inbound_worker_stop_event = stop_event
     fastapi_app.state.inbound_worker_thread = inbound_thread
@@ -107,6 +123,7 @@ async def lifespan(fastapi_app: FastAPI):
     inbound_worker.shutdown()
     if fastapi_app.state.metrics_manager is not None:
         fastapi_app.state.metrics_manager.shutdown()
+    LOGGER.info("Ingest API shutdown complete")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -131,6 +148,13 @@ async def ingest_file(
     filename = _safe_filename(file.filename)
     content_type = _content_type(file, filename)
     stored_path, size_bytes = _save_upload(file, filename)
+    LOGGER.info(
+        "Received upload filename=%s content_type=%s size_bytes=%s stored_path=%s",
+        filename,
+        content_type,
+        size_bytes,
+        stored_path,
+    )
 
     job = Job.create(
         parser_type="docling",
@@ -148,6 +172,12 @@ async def ingest_file(
 
     request.app.state.metrics_store.create_for_job(job)
     put_item(job)
+    LOGGER.info(
+        "Queued ingest job job_id=%s queue=%s file_path=%s",
+        job.job_id,
+        server_config.inbound_queue_name,
+        stored_path,
+    )
 
     return {
         "job": job.to_queue_message(),

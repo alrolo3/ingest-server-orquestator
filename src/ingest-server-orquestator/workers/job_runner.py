@@ -4,7 +4,9 @@ from config.gpu import configure_gpu_environment, configure_torch_cuda_device
 # Must run before importing torch or parser modules that can load CUDA libraries.
 configure_gpu_environment()
 
+import logging
 from os import getpid
+from os import getenv
 from pathlib import Path
 
 import torch
@@ -19,6 +21,17 @@ from processing.parseer_factory import ParserFactory
 from queues.domain.job import Job
 
 
+logging.basicConfig(
+    level=getenv("INGEST_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    force=True,
+)
+LOGGER = logging.getLogger("ingest-server-orquestator.job-runner")
+OUTPUT_DIR = Path(
+    getenv("INGEST_OUTPUT_DIR", "/datastore/experimento-101/ingest-outputs")
+)
+
+
 def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
     settings = get_server_config()
     metrics = metrics_store or JobMetricsStore()
@@ -30,6 +43,13 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         configure_torch_cuda_device(torch, settings)
         torch.set_float32_matmul_precision("high")
         progress.mark_stage(JobStage.RUNNING, "Worker started processing.")
+        LOGGER.info(
+            "Started job job_id=%s parser=%s chunker=%s input=%s",
+            job.job_id,
+            job.parser_type,
+            job.chunker_type,
+            job.input_data,
+        )
 
         parser = ParserFactory.create(
             parser_type=job.parser_type,
@@ -38,10 +58,12 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
 
         current_stage = JobStage.PARSING
         progress.mark_stage(current_stage, "Parsing document.")
+        LOGGER.info("Parsing job job_id=%s", job.job_id)
         parsed_document = parser.parse(job, progress)
 
         current_stage = JobStage.CHUNKING
         progress.mark_stage(current_stage, "Creating chunks.")
+        LOGGER.info("Chunking job job_id=%s", job.job_id)
         chunker = ChunkerFactory.create(
             chunker_backend=job.parser_type,
             chunker_type=job.chunker_type,
@@ -51,21 +73,26 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
 
         chunks = chunker.chunk(parsed_document, progress)
         progress.chunks_created(len(chunks))
-        #print(chunks)
+        LOGGER.info("Created chunks job_id=%s count=%s", job.job_id, len(chunks))
 
         current_stage = JobStage.DISPATCHING
         progress.mark_stage(current_stage, "Sending chunks to Elasticsearch.")
+        LOGGER.info("Dispatching chunks job_id=%s count=%s", job.job_id, len(chunks))
         dispatcher = ElasticsearchDispatch(server_config=settings)
         dispatcher.dispatch_chunks(chunks)
         progress.chunks_dispatched(len(chunks))
         progress.mark_done("Job done: chunks sent to Elasticsearch.")
+        LOGGER.info("Finished job job_id=%s", job.job_id)
     except Exception as exc:
         progress.mark_failed(str(exc), stage=current_stage)
+        LOGGER.exception("Job failed job_id=%s stage=%s", job.job_id, current_stage)
         raise
 
     try:
         markdown = parsed_document.get_markdown()
-        output_path = Path.cwd() / f"red-team-{getpid()}.md"
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = OUTPUT_DIR / f"red-team-{job.job_id}-{getpid()}.md"
         output_path.write_text(markdown, encoding="utf-8")
+        LOGGER.info("Wrote markdown output job_id=%s output_path=%s", job.job_id, output_path)
     except Exception as exc:
-        print(f"Failed to write markdown output: {exc}", flush=True)
+        LOGGER.exception("Failed to write markdown output job_id=%s", job.job_id)
