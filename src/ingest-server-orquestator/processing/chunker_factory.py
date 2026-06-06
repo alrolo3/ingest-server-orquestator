@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from config.config import ServerConfig
 from processing.base_chunker import AbstractChunker
@@ -7,7 +7,7 @@ from processing.chunking.docling_chunker import DoclingChunker
 
 class ChunkerFactory:
     _chunkers: ClassVar[dict[str, type[AbstractChunker]]] = {
-        "docling": DoclingChunker,
+        "docling": cast(type[AbstractChunker], DoclingChunker),
     }
 
     @classmethod
@@ -24,7 +24,7 @@ class ChunkerFactory:
             raise ValueError(f"Unsupported chunker backend: {chunker_backend}")
 
         return chunker_cls(
-            type=chunker_type,
+            type_=chunker_type,
             server_config=server_config,
             tokenizer_path=tokenizer_path,
         )

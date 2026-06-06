@@ -5,30 +5,41 @@ from concurrent.futures import ProcessPoolExecutor
 from queue import Empty
 from threading import Event
 
+from metrics.job_metrics import JobStage
+from metrics.progress import ProgressReporter
+from metrics.store import JobMetricsStore
 from queues.queue_local import LocalQueue
+from queues.domain.job import Job
 from workers.job_runner import job_runner
 
 
 class InboundWorker:
-    def __init__(self, stop_event: Event) -> None:
+    def __init__(self, stop_event: Event, metrics_store: JobMetricsStore) -> None:
         self.stop_event = stop_event
         self.queue = LocalQueue()
+        self.metrics_store = metrics_store
 
         self.process_pool = ProcessPoolExecutor(
             max_workers=2,
             mp_context=mp.get_context("spawn"),
-            max_tasks_per_child=10,
+            max_tasks_per_child=1,
         )
 
-    def _on_job_done(self, future):
+    def _on_job_done(self, job: Job, future):
         try:
             future.result()
             print("Job completed successfully", flush=True)
-        except Exception:
+        except Exception as exc:
+            ProgressReporter(job.job_id, self.metrics_store).mark_failed(
+                str(exc),
+                stage=JobStage.FAILED,
+            )
             import traceback
             print("Job failed:", flush=True)
             traceback.print_exc()
 
+    def shutdown(self) -> None:
+        self.process_pool.shutdown(wait=False, cancel_futures=True)
 
     def run_forever(self) -> None:
         while not self.stop_event.is_set():
@@ -37,6 +48,11 @@ class InboundWorker:
             except Empty:
                 continue
 
-            future = self.process_pool.submit(job_runner, job)
+            future = self.process_pool.submit(job_runner, job, self.metrics_store)
             future.add_done_callback(lambda _: self.queue.queue.task_done())
-            future.add_done_callback(self._on_job_done)
+            future.add_done_callback(
+                lambda completed_future, queued_job=job: self._on_job_done(
+                    queued_job,
+                    completed_future,
+                )
+            )

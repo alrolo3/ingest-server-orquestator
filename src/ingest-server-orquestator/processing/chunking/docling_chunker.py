@@ -1,6 +1,6 @@
 import re
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from docling.chunking import HybridChunker
 from docling_core.transforms.chunker.hierarchical_chunker import (
@@ -15,6 +15,7 @@ from pydantic import PrivateAttr
 from transformers import AutoTokenizer
 
 from config.config import ServerConfig
+from metrics.progress import ProgressReporter
 from model.document_chunk import DocumentChunk
 from model.parsed_document import ParsedDocument
 from processing.base_chunker import AbstractChunker
@@ -116,17 +117,19 @@ class DoclingChunker(AbstractChunker):
 
     def __init__(
         self,
-        type: str,
         server_config: ServerConfig,
         tokenizer_path: str,
+        type_: str | None = None,
+        **data: Any,
     ) -> None:
+        chunk_type = type_ or str(data.pop("type"))
         super().__init__(
-            type=type,
+            type=chunk_type,
             server_config=server_config,
         )
 
-        if type != "token":
-            raise ValueError(f"Unsupported Docling chunk type: {type}")
+        if chunk_type != "token":
+            raise ValueError(f"Unsupported Docling chunk type: {chunk_type}")
         if server_config.chunk_max_tokens <= 0:
             raise ValueError("chunk_max_tokens must be greater than zero")
 
@@ -138,7 +141,8 @@ class DoclingChunker(AbstractChunker):
     @staticmethod
     @lru_cache(maxsize=8)
     def _build_token_chunker(tokenizer_path: str, max_tokens: int) -> HybridChunker:
-        tokenizer = AutoTokenizer.from_pretrained(
+        from_pretrained = cast(Any, AutoTokenizer.from_pretrained)
+        tokenizer = from_pretrained(
             tokenizer_path,
             local_files_only=True,
         )
@@ -154,8 +158,14 @@ class DoclingChunker(AbstractChunker):
             serializer_provider=MarkdownChunkingSerializerProvider(),
         )
 
-    def chunk(self, doc: ParsedDocument) -> list[DocumentChunk]:
-        return self._docling_chunks(doc)
+    def chunk(
+        self,
+        doc: ParsedDocument,
+        progress: ProgressReporter,
+    ) -> list[DocumentChunk]:
+        chunks = self._docling_chunks(doc)
+        progress.chunks_created(len(chunks))
+        return chunks
 
     def _docling_chunks(self, document: ParsedDocument) -> list[DocumentChunk]:
         chunks: list[DocumentChunk] = []
@@ -163,8 +173,8 @@ class DoclingChunker(AbstractChunker):
             doc_chunk = DocChunk.model_validate(chunk)
             raw_text = self._chunk_text(doc_chunk)
             contextualized_text = self._contextualized_text(doc_chunk)
-            text = contextualized_text or raw_text
-            if not text:
+            content = contextualized_text or raw_text
+            if not content:
                 continue
             doc_items, page_numbers = _docling_chunk_refs(doc_chunk)
             chunk_index = len(chunks)
@@ -172,9 +182,9 @@ class DoclingChunker(AbstractChunker):
                 self._document_chunk(
                     document=document,
                     chunk_index=chunk_index,
-                    content=text,
+                    content=content,
                     raw_text=raw_text,
-                    content_token_count=self._count_tokens(text),
+                    content_token_count=self._count_tokens(content),
                     doc_items=doc_items,
                     page_numbers=page_numbers,
                 )
@@ -188,8 +198,8 @@ class DoclingChunker(AbstractChunker):
     def _contextualized_text(self, chunk: DocChunk) -> str:
         return self._chunker.contextualize(chunk=chunk).strip()
 
-    def _count_tokens(self, text: str) -> int | None:
-        return self._chunker.tokenizer.count_tokens(text)
+    def _count_tokens(self, content: str) -> int | None:
+        return self._chunker.tokenizer.count_tokens(content)
 
     def _document_chunk(
         self,

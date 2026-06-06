@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from config.config import ServerConfig
 from processing.base_parser import AbstractParser
@@ -7,7 +7,7 @@ from processing.parsers.docling_parser import DoclingParser
 
 class ParserFactory:
     _parsers: ClassVar[dict[str, type[AbstractParser]]] = {
-        "docling": DoclingParser,
+        "docling": cast(type[AbstractParser], DoclingParser),
     }
 
     @classmethod

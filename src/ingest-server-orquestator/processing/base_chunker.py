@@ -1,10 +1,7 @@
-from abc import ABC, abstractmethod
-from typing import Any
-
-from docling_core.types import DoclingDocument
 from pydantic import BaseModel, ConfigDict
 
 from config.config import ServerConfig
+from metrics.progress import ProgressReporter
 from model.document_chunk import DocumentChunk
 from model.parsed_document import ParsedDocument
 
@@ -17,5 +14,5 @@ class AbstractChunker(BaseModel):
     type: str
     server_config: ServerConfig
 
-    def chunk(self, doc: ParsedDocument) -> list[DocumentChunk]:
+    def chunk(self, doc: ParsedDocument, progress: ProgressReporter) -> list[DocumentChunk]:
         raise NotImplementedError

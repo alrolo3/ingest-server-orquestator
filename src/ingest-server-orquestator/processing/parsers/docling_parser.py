@@ -1,26 +1,31 @@
 from pathlib import Path
 
+from config.gpu import configure_gpu_environment
+
+# Must run before importing Docling, EasyOCR, or other CUDA-backed dependencies.
+configure_gpu_environment()
+
 from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.backend_options import PdfBackendOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.chart_extraction_options import ChartExtractionModelOptions
-from docling.datamodel.picture_classification_options import DocumentPictureClassifierOptions
 from docling.datamodel.pipeline_options import ThreadedPdfPipelineOptions, CodeFormulaVlmOptions, \
-    PictureDescriptionApiOptions, TableStructureOptions, TableFormerMode, EasyOcrOptions, TesseractCliOcrOptions, \
-    OcrAutoOptions
+    PictureDescriptionApiOptions, TableStructureOptions, TableFormerMode, OcrAutoOptions
 from docling.document_converter import PdfFormatOption, DocumentConverter
-from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
-from docling_core.types.doc import ImageRefMode
 from docling_core.types.doc.document import DocItemLabel, DoclingDocument
 from docling_pp_doc_layout.options import PPDocLayoutV3Options
 from pydantic import AnyUrl
 
-from config.config import ServerConfig, get_server_config
-from model import parsed_document
+from config.config import ServerConfig
+from metrics.progress import ProgressReporter
 from model.base_document import DoclingOutputDocument
 from model.parsed_document import ParsedDocument
 from processing.base_parser import AbstractParser
+from processing.parsers.docling_progress import (
+    ProgressReportingStandardPdfPipeline,
+    docling_progress,
+)
 from queues.domain.job import Job
 
 
@@ -34,15 +39,28 @@ def _document_title(doc: DoclingDocument) -> str | None:
     return title if title else None
 
 
+def _job_source_path(job: Job) -> Path:
+    file_path = job.input_data.get("file_path")
+    if not file_path:
+        raise ValueError("Job input_data must include file_path")
+
+    source_path = Path(str(file_path))
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Job file does not exist: {source_path}")
+
+    return source_path
+
+
 class DoclingParser(AbstractParser):
     """Parser implementation backed by Docling."""
 
-    def parse(self, job: Job) -> ParsedDocument:
+    def parse(self, job: Job, progress: ProgressReporter) -> ParsedDocument:
 
-        #job.file
-        source_path = Path("/datastore/ingest-server-orquestator/src/Hands_On_Red_Team_Tactics___A_practical.pdf")
+        config_server: ServerConfig = self.server_config
 
-        config_server: ServerConfig = get_server_config()
+        source_path = _job_source_path(job)
+        source_file_name = str(job.input_data.get("file_name") or source_path.name)
+        mime_type = str(job.input_data.get("mime_type") or "application/pdf")
 
         #Sacar las options del job o de la app
 
@@ -50,7 +68,7 @@ class DoclingParser(AbstractParser):
             document_timeout=None,
             accelerator_options=AcceleratorOptions(
                 num_threads=8,
-                device="cuda:4",
+                device=config_server.docling_device,
                 cuda_use_flash_attention2=False,
             ),
 
@@ -155,7 +173,7 @@ class DoclingParser(AbstractParser):
             backend=DoclingParseDocumentBackend,
             backend_options=backend_options,
             pipeline_options=threaded_pipeline_options,
-            pipeline_cls=StandardPdfPipeline)
+            pipeline_cls=ProgressReportingStandardPdfPipeline)
 
         converter = DocumentConverter(
             allowed_formats=[InputFormat.PDF],
@@ -163,18 +181,20 @@ class DoclingParser(AbstractParser):
 
         print("Starting conversion...")
 
-        doc = converter.convert(source_path).document
+        with docling_progress(progress):
+            doc = converter.convert(source_path).document
 
         parsed_document = ParsedDocument(
             document_id=job.job_id,
-            source_file_name=source_path.name,
+            source_file_name=source_file_name,
             source_path=str(source_path),
-            mime_type="application/pdf",
+            mime_type=mime_type,
             title=_document_title(doc),
             page_count=len(doc.pages),
             #markdown=doc.export_to_markdown(),
             #text=doc.export_to_text(),
             original_out_doc=DoclingOutputDocument(raw=doc),
         )
+        progress.set_total_pages(parsed_document.page_count)
 
         return parsed_document

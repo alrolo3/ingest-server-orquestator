@@ -1,5 +1,3 @@
-from abc import abstractmethod, ABC
-from dataclasses import dataclass
 from typing import Any
 
 from docling_core.types import DoclingDocument

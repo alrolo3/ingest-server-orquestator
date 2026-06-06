@@ -1,8 +1,7 @@
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict
 
 from config.config import ServerConfig
+from metrics.progress import ProgressReporter
 from model.parsed_document import ParsedDocument
 from queues.domain.job import Job
 
@@ -15,5 +14,5 @@ class AbstractParser(BaseModel):
     type: str
     server_config: ServerConfig
 
-    def parse(self, source: Any) -> Any:
+    def parse(self, job: Job, progress: ProgressReporter) -> ParsedDocument:
         raise NotImplementedError

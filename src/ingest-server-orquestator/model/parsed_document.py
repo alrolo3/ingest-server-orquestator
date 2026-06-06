@@ -1,6 +1,5 @@
 from typing import Any
 
-from docling_core.types import DoclingDocument
 from pydantic import BaseModel, Field
 
 from model.base_document import AbstractOutputDocument
