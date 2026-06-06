@@ -360,7 +360,9 @@ def build_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
+    root_path = os.getenv("GRADIO_ROOT_PATH") or None
     build_app().launch(
         server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
         server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+        root_path=root_path,
     )
