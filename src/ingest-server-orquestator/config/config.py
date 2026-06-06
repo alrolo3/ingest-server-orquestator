@@ -28,7 +28,7 @@ class ServerConfig:
     tokenizer_path: Path
     cuda_device_order: str = "PCI_BUS_ID"
     physical_cuda_device: str = "4"
-    visible_cuda_devices: str = "4"
+    visible_cuda_devices: str = "0"
     logical_cuda_device_index: int = 0
     docling_device: str = "cuda:0"
     elastic_hosts: list[str] = field(default_factory=_default_elastic_hosts)
@@ -43,6 +43,9 @@ class ServerConfig:
     elastic_bulk_request_timeout_seconds: int = 1800
     elastic_bulk_batch_size: int = 100
     elastic_bulk_max_retries: int = 5
+    docling_picture_description_url: str = (
+        "http://vllm-qwen35-9b:8007/v1/chat/completions"
+    )
 
 
 _SERVER_CONFIG: ServerConfig | None = None
@@ -80,8 +83,11 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 
 def _load_server_config_from_env() -> ServerConfig:
     physical_cuda_device = getenv("PHYSICAL_CUDA_DEVICE", "4")
-    visible_cuda_devices = getenv("CUDA_VISIBLE_DEVICES", physical_cuda_device)
     logical_cuda_device_index = _env_int("LOGICAL_CUDA_DEVICE_INDEX", 0)
+    visible_cuda_devices = getenv(
+        "CUDA_VISIBLE_DEVICES",
+        str(logical_cuda_device_index),
+    )
     docling_device = getenv("DOCLING_DEVICE", f"cuda:{logical_cuda_device_index}")
     elastic_url = getenv("ELASTIC_URL")
     elastic_hosts_default = [elastic_url] if elastic_url else _DEFAULT_ELASTIC_HOSTS
@@ -118,6 +124,10 @@ def _load_server_config_from_env() -> ServerConfig:
         ),
         elastic_verify_certs=_env_bool("ELASTIC_VERIFY_CERTS", False),
         elastic_ssl_show_warn=_env_bool("ELASTIC_SSL_SHOW_WARN", False),
+        docling_picture_description_url=getenv(
+            "DOCLING_PICTURE_DESCRIPTION_URL",
+            "http://vllm-qwen35-9b:8007/v1/chat/completions",
+        ),
     )
 
 

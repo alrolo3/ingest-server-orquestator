@@ -31,7 +31,7 @@ class ServerConfigTest(unittest.TestCase):
         )
         self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
         self.assertEqual("4", settings.physical_cuda_device)
-        self.assertEqual("4", settings.visible_cuda_devices)
+        self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
         self.assertEqual("cuda:0", settings.docling_device)
         self.assertEqual(["https://localhost:9200"], settings.elastic_hosts)
@@ -52,6 +52,10 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(1800, settings.elastic_bulk_request_timeout_seconds)
         self.assertEqual(100, settings.elastic_bulk_batch_size)
         self.assertEqual(5, settings.elastic_bulk_max_retries)
+        self.assertEqual(
+            "http://vllm-qwen35-9b:8007/v1/chat/completions",
+            settings.docling_picture_description_url,
+        )
 
     def test_load_server_config_uses_environment_overrides(self) -> None:
         env = {
@@ -77,6 +81,7 @@ class ServerConfigTest(unittest.TestCase):
             "ELASTIC_BULK_REQUEST_TIMEOUT_SECONDS": "600",
             "ELASTIC_BULK_BATCH_SIZE": "25",
             "ELASTIC_BULK_MAX_RETRIES": "2",
+            "DOCLING_PICTURE_DESCRIPTION_URL": "http://vlm:8007/v1/chat/completions",
         }
         with patch.dict(os.environ, env, clear=True):
             config_module._SERVER_CONFIG = None
@@ -108,6 +113,10 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(1800, settings.elastic_bulk_request_timeout_seconds)
         self.assertEqual(100, settings.elastic_bulk_batch_size)
         self.assertEqual(5, settings.elastic_bulk_max_retries)
+        self.assertEqual(
+            "http://vlm:8007/v1/chat/completions",
+            settings.docling_picture_description_url,
+        )
 
     def test_elastic_url_is_single_host_fallback(self) -> None:
         with patch.dict(

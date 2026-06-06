@@ -100,7 +100,7 @@ class DoclingParser(AbstractParser):
             #picture_classification_options=DocumentPictureClassifierOptions(),
             picture_description_options=PictureDescriptionApiOptions(
                 prompt="Describe the image. Be concise and accurate. If the image is a diagram, generate a mermaid code diagram.",
-                url=AnyUrl("http://localhost:8007/v1/chat/completions"),
+                url=AnyUrl(config_server.docling_picture_description_url),
                 params={
                     "model": "Qwen3.5-9B",
                     "temperature": 0.3,

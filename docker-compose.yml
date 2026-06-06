@@ -37,6 +37,7 @@ services:
       CUDA_VISIBLE_DEVICES: "${INGEST_CUDA_VISIBLE_DEVICES:-0}"
       LOGICAL_CUDA_DEVICE_INDEX: "${INGEST_LOGICAL_CUDA_DEVICE_INDEX:-0}"
       DOCLING_DEVICE: "${INGEST_DOCLING_DEVICE:-cuda:0}"
+      DOCLING_PICTURE_DESCRIPTION_URL: "${INGEST_DOCLING_PICTURE_DESCRIPTION_URL:-http://vllm-qwen35-9b:8007/v1/chat/completions}"
       ELASTIC_URL: "${INGEST_ELASTIC_URL:-https://elasticsearch-gpu-indexer:9200}"
       ELASTIC_HOSTS: "${INGEST_ELASTIC_HOSTS:-https://elasticsearch-gpu-indexer:9200}"
       ELASTIC_API_KEY: "${INGEST_ELASTIC_API_KEY:-}"
@@ -75,6 +76,7 @@ services:
     networks:
       - exp101_services
       - exp101_elastic_private
+      - exp101_llm_private
 
   ingest-gradio:
     image: ingest-server-orquestator:latest
@@ -115,3 +117,6 @@ networks:
   exp101_elastic_private:
     external: true
     name: ${EXP101_ELASTIC_NETWORK:-exp101_elastic_private}
+  exp101_llm_private:
+    external: true
+    name: ${EXP101_LLM_NETWORK:-exp101_llm_private}
