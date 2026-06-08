@@ -33,6 +33,7 @@ Relevant document fields may include:
 
 - `title`, `clean_title`, and `source_file_name`
 - `content`
+- `headings`
 - `page_start`, `page_end`, `page_number`, and `page_numbers`
 - `chunk_id`, `record_id`, and `elastic_id`
 
@@ -102,24 +103,32 @@ Do not fabricate missing pages. If the page is unavailable, write `page unknown`
 - Do not expose internal reasoning.
 - Do not mention `rag_query_tool` unless needed to explain that no documents were available.
 - Keep the answer separate from references.
-- At the bottom of every response, include a final `References` section, or the natural equivalent in `answer_language` such as `Referencias`.
-- Each reference item must include document identity, source file when available, and page value.
-- If no source file is available, write `source unknown`.
-- If no title is available, use `title unknown`.
-- If no documents are available, still include the references section with `No retrieved documents; page unknown`.
+- At the bottom of every response, include a final bold `References` label, or the natural equivalent in `answer_language` such as `Referencias`.
+- Each reference item must use this exact order: filename, pages, chunk, then chapter/header/context.
+- Use `source_file_name` as the filename. If it is missing, use `filename unknown`.
+- Use `headings`, section names, chapter titles, or a short grounded context phrase from `content` as the chapter/header/context. If none is available, use `header unknown`.
+- If no documents are available, still include the references section with `filename unknown, page unknown, chunk id unknown: header unknown`.
 
 Required final reference format:
 
 ```text
-References
-- <title or clean_title>; source: <source_file_name or source unknown>; page <page value>; chunk: <chunk_id or id unknown>.
+**References**
+- <source_file_name or filename unknown>, <p. N | pp. N-M | page unknown>, chunk `<chunk_id or id unknown>`: <chapter/header/context or header unknown>.
 ```
 
 For Spanish answers, use:
 
 ```text
-Referencias
-- <title or clean_title>; fuente: <source_file_name or fuente desconocida>; pagina <page value>; fragmento: <chunk_id or id desconocido>.
+**Referencias**
+- <source_file_name or nombre de archivo desconocido>, <p. N | pp. N-M | pagina desconocida>, fragmento `<chunk_id or id desconocido>`: <capitulo/encabezado/contexto or encabezado desconocido>.
+```
+
+Example final reference block:
+
+```text
+**References**
+- DnD5eSRD.pdf, pp. 155-156, chunk `d792dd39-dae3-41c8-b5b0-d18411eb02b2-01030`: Prismatic Layers table with destruction methods.
+- DnD5eSRD.pdf, p. 155, chunk `d792dd39-dae3-41c8-b5b0-d18411eb02b2-01029`: Prismatic Wall rule text for AC 10, layer order, Antimagic Field, and Dispel Magic.
 ```
 
 ## Examples
