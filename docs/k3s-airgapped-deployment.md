@@ -39,6 +39,74 @@ For ingest data, use one writable PV/PVC and subpaths:
   outputs/
 ```
 
+## Build And Export The Application Image
+
+Build the Docker image on a machine that has network access to install Python
+dependencies. The build context must be the parent directory of this repository,
+because the Dockerfile copies `ingest-server-orquestator/...` paths:
+
+```bash
+cd /datastore/experimento-101
+docker build \
+  -f ingest-server-orquestator/Dockerfile \
+  -t ingest-server-orquestator:latest \
+  .
+```
+
+If you are already inside the repository directory, use the parent directory as
+the build context:
+
+```bash
+docker build -f Dockerfile -t ingest-server-orquestator:latest ..
+```
+
+The tag must match the image referenced by `k8s/ingest-server.yaml`:
+
+```yaml
+image: ingest-server-orquestator:latest
+imagePullPolicy: IfNotPresent
+```
+
+Export the image as a tarball for the air-gapped k3s node:
+
+```bash
+docker save ingest-server-orquestator:latest \
+  | gzip -c > ingest-server-orquestator_latest.tar.gz
+sha256sum ingest-server-orquestator_latest.tar.gz \
+  > ingest-server-orquestator_latest.tar.gz.sha256
+```
+
+Copy `ingest-server-orquestator_latest.tar.gz` and its `.sha256` file to every
+k3s node that can schedule the ingest pod.
+
+## Import The Image Into k3s
+
+On each air-gapped k3s node, verify and import the image into k3s containerd:
+
+```bash
+sha256sum -c ingest-server-orquestator_latest.tar.gz.sha256
+gunzip -k ingest-server-orquestator_latest.tar.gz
+sudo k3s ctr -n k8s.io images import ingest-server-orquestator_latest.tar
+sudo k3s crictl images | grep ingest-server-orquestator
+```
+
+Apply the manifest after the image and model folders are present:
+
+```bash
+kubectl apply -f k8s/ingest-server.yaml
+kubectl rollout status deployment/ingest-server
+```
+
+If you import a new build using the same `ingest-server-orquestator:latest` tag,
+restart the deployment so k3s creates a new pod from the newly imported image:
+
+```bash
+kubectl rollout restart deployment/ingest-server
+kubectl rollout status deployment/ingest-server
+```
+
+The application listens on port `8000`, and the k3s service exposes port `8000`.
+
 ## k3s Mounts
 
 Example API pod mounts:

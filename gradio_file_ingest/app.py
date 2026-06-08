@@ -9,7 +9,7 @@ import gradio as gr
 import requests
 
 
-DEFAULT_BACKEND_URL = os.getenv("INGEST_API_URL", "http://127.0.0.1:8001")
+DEFAULT_BACKEND_URL = os.getenv("INGEST_API_URL", "http://127.0.0.1:8000")
 DEFAULT_INGEST_PATH = os.getenv("INGEST_FILE_PATH", "/api/v1/ingest/file")
 DEFAULT_JOBS_PATH = os.getenv("INGEST_JOBS_PATH", "/api/v1/ingest/jobs")
 POLL_SECONDS = float(os.getenv("INGEST_POLL_SECONDS", "3"))

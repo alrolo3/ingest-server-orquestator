@@ -1,11 +1,11 @@
 # Test your FastAPI endpoints
 
-GET http://127.0.0.1:8001/
+GET http://127.0.0.1:8000/
 Accept: application/json
 
 ###
 
-POST http://127.0.0.1:8001/api/v1/ingest/file
+POST http://127.0.0.1:8000/api/v1/ingest/file
 Accept: application/json
 
 ###

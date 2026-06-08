@@ -17,7 +17,7 @@ services:
       - --host
       - 0.0.0.0
       - --port
-      - "8001"
+      - "8000"
       - --log-level
       - info
       - --access-log
@@ -58,7 +58,7 @@ services:
       - "host.docker.internal:host-gateway"
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -82,7 +82,7 @@ services:
       - gradio_file_ingest/app.py
 
     environment:
-      INGEST_API_URL: "${INGEST_GRADIO_API_URL:-http://ingest-api:8001}"
+      INGEST_API_URL: "${INGEST_GRADIO_API_URL:-http://ingest-api:8000}"
       INGEST_FILE_PATH: "${INGEST_FILE_PATH:-/api/v1/ingest/file}"
       INGEST_JOBS_PATH: "${INGEST_JOBS_PATH:-/api/v1/ingest/jobs}"
       INGEST_POLL_SECONDS: "${INGEST_POLL_SECONDS:-3}"

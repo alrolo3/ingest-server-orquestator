@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ingest-server-secrets
+type: Opaque
+stringData:
+  ELASTIC_API_KEY: replace-me
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingest-server-config
+data:
+  APP_ENV: prod
+  INGEST_LOG_LEVEL: INFO
+  PHYSICAL_CUDA_DEVICE: "4"
+  DOCLING_PICTURE_DESCRIPTION_URL: http://vllm-qwen35-9b:8007/v1/chat/completions
+  ELASTIC_URL: https://elasticsearch-gpu-indexer:9200
+  ELASTIC_HOSTS: https://elasticsearch-gpu-indexer:9200
+  ELASTIC_INDEX_NAME: open-rag-embeddings-v3
+  ELASTIC_PIPELINE_NAME: open_rag_embeddings_v3_multilingual_semantic_pipeline
+  ELASTIC_INFERENCE_ID: qwen3-embedding-4b
+  ELASTIC_VERIFY_CERTS: "false"
+  ELASTIC_SSL_SHOW_WARN: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-server
+  labels:
+    app.kubernetes.io/name: ingest-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingest-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ingest-server
+    spec:
+      containers:
+        - name: ingest-server
+          image: ingest-server-orquestator:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - uvicorn
+            - src.main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --log-level
+            - info
+            - --access-log
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: ingest-server-config
+            - secretRef:
+                name: ingest-server-secrets
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          volumeMounts:
+            - name: ingest-data
+              mountPath: /uploads
+              subPath: uploads
+            - name: ingest-data
+              mountPath: /outputs
+              subPath: outputs
+            - name: models-llm
+              mountPath: /tokenizer
+              subPath: tokenizers/qwen3-embedding-4b
+              readOnly: true
+            - name: models-llm
+              mountPath: /docling-models
+              subPath: docling
+              readOnly: true
+      volumes:
+        - name: ingest-data
+          persistentVolumeClaim:
+            claimName: ingest-data-pvc
+        - name: models-llm
+          persistentVolumeClaim:
+            claimName: models-llm-pvc
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingest-server
+  labels:
+    app.kubernetes.io/name: ingest-server
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ingest-server
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

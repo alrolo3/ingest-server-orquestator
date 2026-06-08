@@ -12,7 +12,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The app defaults to `http://127.0.0.1:8001/api/v1/ingest/file`.
+The app defaults to `http://127.0.0.1:8000/api/v1/ingest/file`.
 
 Optional environment variables:
 
