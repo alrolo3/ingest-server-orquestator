@@ -10,8 +10,8 @@ import requests
 
 
 DEFAULT_BACKEND_URL = os.getenv("INGEST_API_URL", "http://127.0.0.1:8000")
-DEFAULT_INGEST_PATH = os.getenv("INGEST_FILE_PATH", "/api/v1/ingest/file")
-DEFAULT_JOBS_PATH = os.getenv("INGEST_JOBS_PATH", "/api/v1/ingest/jobs")
+INGEST_FILE_ENDPOINT = "/api/v1/ingest/file"
+INGEST_JOBS_ENDPOINT = "/api/v1/ingest/jobs"
 POLL_SECONDS = float(os.getenv("INGEST_POLL_SECONDS", "3"))
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("INGEST_TIMEOUT_SECONDS", "60"))
 
@@ -22,14 +22,14 @@ ERROR_HEADERS = ["File", "Stage", "Pages", "Error", "Finished"]
 
 def _target_url(base_url: str, endpoint_path: str) -> str:
     base = (base_url or DEFAULT_BACKEND_URL).strip().rstrip("/")
-    endpoint = (endpoint_path or DEFAULT_INGEST_PATH).strip()
+    endpoint = endpoint_path.strip()
     if not endpoint.startswith("/"):
         endpoint = f"/{endpoint}"
     return f"{base}{endpoint}"
 
 
-def _jobs_url(base_url: str, jobs_path: str) -> str:
-    return _target_url(base_url, jobs_path or DEFAULT_JOBS_PATH)
+def _jobs_url(base_url: str) -> str:
+    return _target_url(base_url, INGEST_JOBS_ENDPOINT)
 
 
 def _uploaded_path(uploaded_file: Any) -> Path:
@@ -179,9 +179,8 @@ def _job_tables(
 
 def fetch_job_metrics(
     backend_url: str,
-    jobs_path: str,
 ) -> tuple[str, list[list[Any]], list[list[Any]], list[list[Any]]]:
-    url = _jobs_url(backend_url, jobs_path)
+    url = _jobs_url(backend_url)
     try:
         response = requests.get(
             url,
@@ -195,12 +194,12 @@ def fetch_job_metrics(
     return _job_tables(_jobs_from_response(_response_body(response)))
 
 
-def post_files(uploaded_files: Any, backend_url: str, endpoint_path: str) -> tuple[str, list[dict[str, Any]]]:
+def post_files(uploaded_files: Any, backend_url: str) -> tuple[str, list[dict[str, Any]]]:
     files = _uploaded_files(uploaded_files)
     if not files:
         return "No files selected.", []
 
-    url = _target_url(backend_url, endpoint_path)
+    url = _target_url(backend_url, INGEST_FILE_ENDPOINT)
     results: list[dict[str, Any]] = []
 
     for uploaded_file in files:
@@ -270,8 +269,6 @@ def post_files(uploaded_files: Any, backend_url: str, endpoint_path: str) -> tup
 def post_files_and_refresh(
     uploaded_files: Any,
     backend_url: str,
-    endpoint_path: str,
-    jobs_path: str,
 ) -> tuple[
     str,
     list[dict[str, Any]],
@@ -280,11 +277,8 @@ def post_files_and_refresh(
     list[list[Any]],
     list[list[Any]],
 ]:
-    status, results = post_files(uploaded_files, backend_url, endpoint_path)
-    summary, active_rows, processed_rows, error_rows = fetch_job_metrics(
-        backend_url,
-        jobs_path,
-    )
+    status, results = post_files(uploaded_files, backend_url)
+    summary, active_rows, processed_rows, error_rows = fetch_job_metrics(backend_url)
     return status, results, summary, active_rows, processed_rows, error_rows
 
 
@@ -296,10 +290,7 @@ def build_app() -> gr.Blocks:
     with gr.Blocks(title="File Ingest") as app:
         gr.Markdown("# File Ingest")
 
-        with gr.Row():
-            backend_url = gr.Textbox(label="Backend URL", value=DEFAULT_BACKEND_URL)
-            endpoint_path = gr.Textbox(label="Endpoint", value=DEFAULT_INGEST_PATH)
-            jobs_path = gr.Textbox(label="Jobs Endpoint", value=DEFAULT_JOBS_PATH)
+        backend_url = gr.Textbox(label="Backend URL", value=DEFAULT_BACKEND_URL)
 
         uploaded_files = gr.File(
             label="Files",
@@ -336,7 +327,7 @@ def build_app() -> gr.Blocks:
 
         submit.click(
             fn=post_files_and_refresh,
-            inputs=[uploaded_files, backend_url, endpoint_path, jobs_path],
+            inputs=[uploaded_files, backend_url],
             outputs=[
                 status,
                 responses,
@@ -352,7 +343,7 @@ def build_app() -> gr.Blocks:
         )
         timer.tick(
             fn=fetch_job_metrics,
-            inputs=[backend_url, jobs_path],
+            inputs=[backend_url],
             outputs=[metrics_summary, active_jobs, processed_jobs, failed_jobs],
         )
 

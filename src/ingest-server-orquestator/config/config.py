@@ -41,7 +41,6 @@ class ServerConfig:
     docling_artifacts_path: Path
     docling_pp_layout_model_path: Path
     cuda_device_order: str = _CUDA_DEVICE_ORDER
-    physical_cuda_device: str = "4"
     visible_cuda_devices: str = _VISIBLE_CUDA_DEVICES
     logical_cuda_device_index: int = _LOGICAL_CUDA_DEVICE_INDEX
     docling_device: str = _DOCLING_DEVICE
@@ -89,7 +88,6 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 
 
 def _load_server_config_from_env() -> ServerConfig:
-    physical_cuda_device = getenv("PHYSICAL_CUDA_DEVICE", "4")
     elastic_url = getenv("ELASTIC_URL")
     elastic_hosts_default = [elastic_url] if elastic_url else _DEFAULT_ELASTIC_HOSTS
 
@@ -102,7 +100,6 @@ def _load_server_config_from_env() -> ServerConfig:
         docling_artifacts_path=DOCLING_ARTIFACTS_PATH,
         docling_pp_layout_model_path=DOCLING_PP_LAYOUT_MODEL_PATH,
         cuda_device_order=_CUDA_DEVICE_ORDER,
-        physical_cuda_device=physical_cuda_device,
         visible_cuda_devices=_VISIBLE_CUDA_DEVICES,
         logical_cuda_device_index=_LOGICAL_CUDA_DEVICE_INDEX,
         docling_device=_DOCLING_DEVICE,

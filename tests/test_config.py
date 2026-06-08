@@ -35,7 +35,6 @@ class ServerConfigTest(unittest.TestCase):
             settings.docling_pp_layout_model_path,
         )
         self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
-        self.assertEqual("4", settings.physical_cuda_device)
         self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
         self.assertEqual("cuda:0", settings.docling_device)
@@ -99,7 +98,6 @@ class ServerConfigTest(unittest.TestCase):
     def test_load_server_config_uses_environment_overrides(self) -> None:
         env = {
             "APP_ENV": "prod",
-            "PHYSICAL_CUDA_DEVICE": "2",
             "ELASTIC_HOSTS": "https://one:9200,https://two:9200",
             "ELASTIC_API_KEY": "",
             "ELASTIC_INDEX_NAME": "custom-index",
@@ -133,7 +131,6 @@ class ServerConfigTest(unittest.TestCase):
             settings.docling_pp_layout_model_path,
         )
         self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
-        self.assertEqual("2", settings.physical_cuda_device)
         self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
         self.assertEqual("cuda:0", settings.docling_device)

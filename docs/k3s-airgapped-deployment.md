@@ -105,7 +105,52 @@ kubectl rollout restart deployment/ingest-server
 kubectl rollout status deployment/ingest-server
 ```
 
-The application listens on port `8000`, and the k3s service exposes port `8000`.
+The API application listens on port `8000`, and the API service is `ClusterIP`
+only. Do not expose the `ingest-server` service outside the cluster. The
+manifest also includes a NetworkPolicy that allows API ingress on port `8000`
+from the Gradio pod only, when network policy enforcement is enabled in k3s.
+
+Gradio runs as a separate pod in the same manifest and talks to the internal API
+service at `http://ingest-server:8000`.
+
+```text
+http://<ingest-gradio-service>:7860
+```
+
+The Gradio pod uses these ConfigMap values:
+
+```yaml
+data:
+  INGEST_API_URL: http://ingest-server:8000
+  INGEST_POLL_SECONDS: "3"
+  INGEST_TIMEOUT_SECONDS: "60"
+  GRADIO_SERVER_NAME: 0.0.0.0
+  GRADIO_SERVER_PORT: "7860"
+  GRADIO_ROOT_PATH: ""
+```
+
+The upload and jobs endpoints are fixed in code as `/api/v1/ingest/file` and
+`/api/v1/ingest/jobs`.
+
+For local access without exposing the API service, port-forward only Gradio:
+
+```bash
+kubectl port-forward svc/ingest-gradio 7860:7860
+```
+
+## GPU Selection In k3s
+
+The k3s manifest does not request `nvidia.com/gpu`. Instead, it forces the
+visible host GPU through `NVIDIA_VISIBLE_DEVICES` in the `ingest-server-config`
+ConfigMap. Set `X` to the host GPU id you want the pod to use:
+
+```yaml
+data:
+  NVIDIA_VISIBLE_DEVICES: "X"
+```
+
+`NVIDIA_VISIBLE_DEVICES` controls which host GPU is exposed to the container,
+and the app uses logical CUDA device `0` inside the container.
 
 ## k3s Mounts
 

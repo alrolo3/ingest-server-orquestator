@@ -13,7 +13,7 @@ metadata:
 data:
   APP_ENV: prod
   INGEST_LOG_LEVEL: INFO
-  PHYSICAL_CUDA_DEVICE: "4"
+  NVIDIA_VISIBLE_DEVICES: "4"
   DOCLING_PICTURE_DESCRIPTION_URL: http://vllm-qwen35-9b:8007/v1/chat/completions
   ELASTIC_URL: https://elasticsearch-gpu-indexer:9200
   ELASTIC_HOSTS: https://elasticsearch-gpu-indexer:9200
@@ -22,6 +22,18 @@ data:
   ELASTIC_INFERENCE_ID: qwen3-embedding-4b
   ELASTIC_VERIFY_CERTS: "false"
   ELASTIC_SSL_SHOW_WARN: "false"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingest-gradio-config
+data:
+  INGEST_API_URL: http://ingest-server:8000
+  INGEST_POLL_SECONDS: "3"
+  INGEST_TIMEOUT_SECONDS: "60"
+  GRADIO_SERVER_NAME: 0.0.0.0
+  GRADIO_SERVER_PORT: "7860"
+  GRADIO_ROOT_PATH: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -39,6 +51,7 @@ spec:
       labels:
         app.kubernetes.io/name: ingest-server
     spec:
+      runtimeClassName: nvidia
       containers:
         - name: ingest-server
           image: ingest-server-orquestator:latest
@@ -63,9 +76,12 @@ spec:
                 name: ingest-server-config
             - secretRef:
                 name: ingest-server-secrets
-          resources:
-            limits:
-              nvidia.com/gpu: 1
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              valueFrom:
+                configMapKeyRef:
+                  name: ingest-server-config
+                  key: NVIDIA_VISIBLE_DEVICES
           readinessProbe:
             httpGet:
               path: /
@@ -119,4 +135,84 @@ spec:
   ports:
     - name: http
       port: 8000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingest-server-api-from-gradio
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ingest-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingest-gradio
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-gradio
+  labels:
+    app.kubernetes.io/name: ingest-gradio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingest-gradio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ingest-gradio
+    spec:
+      containers:
+        - name: ingest-gradio
+          image: ingest-server-orquestator:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - gradio_file_ingest/app.py
+          ports:
+            - name: http
+              containerPort: 7860
+          envFrom:
+            - configMapRef:
+                name: ingest-gradio-config
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingest-gradio
+  labels:
+    app.kubernetes.io/name: ingest-gradio
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ingest-gradio
+  ports:
+    - name: http
+      port: 7860
       targetPort: http

@@ -54,10 +54,10 @@ class GradioMetricsTest(unittest.TestCase):
         self.assertEqual("bad.pdf", error_rows[0][0])
         self.assertEqual("parse failed", error_rows[0][3])
 
-    def test_jobs_url_uses_backend_base_and_jobs_path(self) -> None:
+    def test_jobs_url_uses_backend_base_and_default_jobs_path(self) -> None:
         self.assertEqual(
             "http://backend/api/v1/ingest/jobs",
-            gradio_app._jobs_url("http://backend/", "api/v1/ingest/jobs"),
+            gradio_app._jobs_url("http://backend/"),
         )
 
 
