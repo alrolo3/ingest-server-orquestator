@@ -5,6 +5,7 @@ docling-ibm-models==3.13.2
 docling-parse==6.2.0
 docling-pp-doc-layout==0.2.2
 docling-slim==2.96.1
+easyocr==1.7.2
 elasticsearch==9.4.1
 fastapi==0.136.3
 gradio==6.16.0

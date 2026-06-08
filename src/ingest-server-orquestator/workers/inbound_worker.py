@@ -6,6 +6,7 @@ import logging
 from queue import Empty
 from threading import Event
 
+from config.config import ServerConfig, get_server_config
 from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
 from metrics.store import JobMetricsStore
@@ -18,17 +19,26 @@ LOGGER = logging.getLogger("ingest-server-orquestator.worker")
 
 
 class InboundWorker:
-    def __init__(self, stop_event: Event, metrics_store: JobMetricsStore) -> None:
+    def __init__(
+        self,
+        stop_event: Event,
+        metrics_store: JobMetricsStore,
+        server_config: ServerConfig | None = None,
+    ) -> None:
         self.stop_event = stop_event
         self.queue = LocalQueue()
         self.metrics_store = metrics_store
+        self.server_config = server_config or get_server_config()
 
         self.process_pool = ProcessPoolExecutor(
-            max_workers=2,
+            max_workers=self.server_config.worker_max_workers,
             mp_context=mp.get_context("spawn"),
             max_tasks_per_child=1,
         )
-        LOGGER.info("Inbound worker initialized max_workers=2")
+        LOGGER.info(
+            "Inbound worker initialized max_workers=%s",
+            self.server_config.worker_max_workers,
+        )
 
     def _on_job_done(self, job: Job, future):
         try:

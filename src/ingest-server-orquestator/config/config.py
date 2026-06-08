@@ -19,16 +19,32 @@ _DEFAULT_ELASTIC_API_KEY = (
 _DEFAULT_ELASTIC_INFERENCE_ID = "qwen3-embedding-4b"
 _APP_NAME = "ingest-server-orquestator"
 _INBOUND_QUEUE_NAME = "inbound"
+_WORKER_MAX_WORKERS = 1
 _CHUNK_MAX_TOKENS = 8192
 _CUDA_DEVICE_ORDER = "PCI_BUS_ID"
 _VISIBLE_CUDA_DEVICES = "0"
 _LOGICAL_CUDA_DEVICE_INDEX = 0
 _DOCLING_DEVICE = "cuda:0"
+_DOCLING_OCR_ENABLED = True
+_DOCLING_OCR_ENGINE = "easyocr"
+_DOCLING_EASY_OCR_LANGS = ["es", "en"]
+_DOCLING_RAPID_OCR_LANGS = ["english"]
+_DOCLING_AUTO_OCR_LANGS: list[str] = []
+_DOCLING_FORCE_FULL_PAGE_OCR = False
+_DOCLING_OCR_BITMAP_AREA_THRESHOLD = 0.05
+_DOCLING_OCR_BATCH_SIZE = 8
+_DOCLING_LAYOUT_BATCH_SIZE = 4
+_DOCLING_TABLE_BATCH_SIZE = 8
+_DOCLING_QUEUE_MAX_SIZE = 16
 _FALSE_VALUES = {"", "0", "false", "no", "off"}
 
 
 def _default_elastic_hosts() -> list[str]:
     return list(_DEFAULT_ELASTIC_HOSTS)
+
+
+def _default_docling_ocr_langs() -> list[str]:
+    return list(_DOCLING_EASY_OCR_LANGS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,10 +56,20 @@ class ServerConfig:
     tokenizer_path: Path
     docling_artifacts_path: Path
     docling_pp_layout_model_path: Path
+    worker_max_workers: int = _WORKER_MAX_WORKERS
     cuda_device_order: str = _CUDA_DEVICE_ORDER
     visible_cuda_devices: str = _VISIBLE_CUDA_DEVICES
     logical_cuda_device_index: int = _LOGICAL_CUDA_DEVICE_INDEX
     docling_device: str = _DOCLING_DEVICE
+    docling_ocr_enabled: bool = _DOCLING_OCR_ENABLED
+    docling_ocr_engine: str = _DOCLING_OCR_ENGINE
+    docling_ocr_langs: list[str] = field(default_factory=_default_docling_ocr_langs)
+    docling_force_full_page_ocr: bool = _DOCLING_FORCE_FULL_PAGE_OCR
+    docling_ocr_bitmap_area_threshold: float = _DOCLING_OCR_BITMAP_AREA_THRESHOLD
+    docling_ocr_batch_size: int = _DOCLING_OCR_BATCH_SIZE
+    docling_layout_batch_size: int = _DOCLING_LAYOUT_BATCH_SIZE
+    docling_table_batch_size: int = _DOCLING_TABLE_BATCH_SIZE
+    docling_queue_max_size: int = _DOCLING_QUEUE_MAX_SIZE
     elastic_hosts: list[str] = field(default_factory=_default_elastic_hosts)
     elastic_api_key: str | None = _DEFAULT_ELASTIC_API_KEY
     elastic_index_name: str = "open-rag-embeddings-v3"
@@ -71,6 +97,22 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in _FALSE_VALUES
 
 
+def _env_int(name: str, default: int) -> int:
+    value = getenv(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    return int(stripped) if stripped else default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = getenv(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    return float(stripped) if stripped else default
+
+
 def _env_optional_string(name: str, default: str | None) -> str | None:
     value = getenv(name)
     if value is None:
@@ -87,14 +129,31 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return values or list(default)
 
 
+def _docling_ocr_engine() -> str:
+    return getenv("DOCLING_OCR_ENGINE", _DOCLING_OCR_ENGINE).strip().lower()
+
+
+def _default_ocr_langs_for_engine(engine: str) -> list[str]:
+    if engine == "rapidocr":
+        return list(_DOCLING_RAPID_OCR_LANGS)
+    if engine == "auto":
+        return list(_DOCLING_AUTO_OCR_LANGS)
+    return list(_DOCLING_EASY_OCR_LANGS)
+
+
 def _load_server_config_from_env() -> ServerConfig:
     elastic_url = getenv("ELASTIC_URL")
     elastic_hosts_default = [elastic_url] if elastic_url else _DEFAULT_ELASTIC_HOSTS
+    docling_ocr_engine = _docling_ocr_engine()
 
     return ServerConfig(
         app_name=_APP_NAME,
         environment=getenv("APP_ENV", "local"),
         inbound_queue_name=_INBOUND_QUEUE_NAME,
+        worker_max_workers=max(
+            1,
+            _env_int("INGEST_WORKER_MAX_WORKERS", _WORKER_MAX_WORKERS),
+        ),
         chunk_max_tokens=_CHUNK_MAX_TOKENS,
         tokenizer_path=TOKENIZER_PATH,
         docling_artifacts_path=DOCLING_ARTIFACTS_PATH,
@@ -103,6 +162,36 @@ def _load_server_config_from_env() -> ServerConfig:
         visible_cuda_devices=_VISIBLE_CUDA_DEVICES,
         logical_cuda_device_index=_LOGICAL_CUDA_DEVICE_INDEX,
         docling_device=_DOCLING_DEVICE,
+        docling_ocr_enabled=_env_bool("DOCLING_OCR_ENABLED", _DOCLING_OCR_ENABLED),
+        docling_ocr_engine=docling_ocr_engine,
+        docling_ocr_langs=_env_list(
+            "DOCLING_OCR_LANGS",
+            _default_ocr_langs_for_engine(docling_ocr_engine),
+        ),
+        docling_force_full_page_ocr=_env_bool(
+            "DOCLING_FORCE_FULL_PAGE_OCR",
+            _DOCLING_FORCE_FULL_PAGE_OCR,
+        ),
+        docling_ocr_bitmap_area_threshold=_env_float(
+            "DOCLING_OCR_BITMAP_AREA_THRESHOLD",
+            _DOCLING_OCR_BITMAP_AREA_THRESHOLD,
+        ),
+        docling_ocr_batch_size=max(
+            1,
+            _env_int("DOCLING_OCR_BATCH_SIZE", _DOCLING_OCR_BATCH_SIZE),
+        ),
+        docling_layout_batch_size=max(
+            1,
+            _env_int("DOCLING_LAYOUT_BATCH_SIZE", _DOCLING_LAYOUT_BATCH_SIZE),
+        ),
+        docling_table_batch_size=max(
+            1,
+            _env_int("DOCLING_TABLE_BATCH_SIZE", _DOCLING_TABLE_BATCH_SIZE),
+        ),
+        docling_queue_max_size=max(
+            1,
+            _env_int("DOCLING_QUEUE_MAX_SIZE", _DOCLING_QUEUE_MAX_SIZE),
+        ),
         elastic_hosts=_env_list("ELASTIC_HOSTS", elastic_hosts_default),
         elastic_api_key=_env_optional_string(
             "ELASTIC_API_KEY",
@@ -119,6 +208,14 @@ def _load_server_config_from_env() -> ServerConfig:
         ),
         elastic_verify_certs=_env_bool("ELASTIC_VERIFY_CERTS", False),
         elastic_ssl_show_warn=_env_bool("ELASTIC_SSL_SHOW_WARN", False),
+        elastic_http_compress=_env_bool("ELASTIC_HTTP_COMPRESS", True),
+        elastic_bulk_api_timeout=getenv("ELASTIC_BULK_API_TIMEOUT", "30m"),
+        elastic_bulk_request_timeout_seconds=_env_int(
+            "ELASTIC_BULK_REQUEST_TIMEOUT_SECONDS",
+            1800,
+        ),
+        elastic_bulk_batch_size=_env_int("ELASTIC_BULK_BATCH_SIZE", 100),
+        elastic_bulk_max_retries=_env_int("ELASTIC_BULK_MAX_RETRIES", 5),
         docling_picture_description_url=getenv(
             "DOCLING_PICTURE_DESCRIPTION_URL",
             "http://vllm-qwen35-9b:8007/v1/chat/completions",

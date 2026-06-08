@@ -203,6 +203,42 @@ PP-DocLayout model is loaded from `/docling-models/pp-doclayout-v3`.
 If a required model is missing, the app should fail locally instead of trying to
 download it from the internet.
 
+OCR is configured through the `ingest-server-config` ConfigMap. The default is
+offline EasyOCR with Spanish and English:
+
+```env
+DOCLING_OCR_ENABLED=true
+DOCLING_OCR_ENGINE=easyocr
+DOCLING_OCR_LANGS=es,en
+DOCLING_FORCE_FULL_PAGE_OCR=false
+DOCLING_OCR_BITMAP_AREA_THRESHOLD=0.05
+DOCLING_OCR_BATCH_SIZE=8
+DOCLING_LAYOUT_BATCH_SIZE=4
+DOCLING_TABLE_BATCH_SIZE=8
+DOCLING_QUEUE_MAX_SIZE=16
+```
+
+This expects EasyOCR artifacts under `/docling-models/artifacts/EasyOcr`.
+The default EasyOCR path runs OCR on CPU so GPU memory is reserved for layout
+and VLM stages.
+`DOCLING_OCR_ENGINE=rapidocr` is available for RapidOCR, but in this Docling
+version RapidOCR language support is limited to `english` and `chinese`.
+Use `DOCLING_OCR_ENABLED=false` for digitally native PDFs when OCR adds noise or
+runtime without improving extraction.
+
+Docling layout and enrichment are GPU-heavy. Keep the API worker at one
+concurrent parser process unless the selected GPU has enough free memory for
+multiple PP-DocLayout/CodeFormula pipelines:
+
+```env
+INGEST_WORKER_MAX_WORKERS=1
+```
+
+Increasing `INGEST_WORKER_MAX_WORKERS` can improve throughput, but multiple
+concurrent jobs can produce CUDA out-of-memory failures even on large GPUs when
+other processes are already using VRAM. If memory pressure still appears with a
+single worker, lower `DOCLING_LAYOUT_BATCH_SIZE` first.
+
 ## Download Models On An Internet-Connected Machine
 
 Install the same project dependencies or at least Docling and Hugging Face tools:

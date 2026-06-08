@@ -9,6 +9,7 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestat
 sys.path.insert(0, str(SRC_DIR))
 
 from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import EasyOcrOptions
 from docling_core.types.doc.document import DoclingDocument, TitleItem
 
 from config.config import ServerConfig
@@ -54,8 +55,11 @@ class DoclingParserTest(unittest.TestCase):
                     app_name="test",
                     environment="test",
                     inbound_queue_name="inbound",
+                    worker_max_workers=1,
                     chunk_max_tokens=2048,
                     tokenizer_path=Path("/tmp/tokenizer"),
+                    docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                    docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
                 ),
             )
             with TemporaryDirectory() as temp_dir:
@@ -78,6 +82,20 @@ class DoclingParserTest(unittest.TestCase):
         pipeline_options = format_options[InputFormat.PDF].pipeline_options
 
         self.assertFalse(pipeline_options.do_chart_extraction)
+        self.assertTrue(pipeline_options.do_ocr)
+        self.assertIsInstance(pipeline_options.ocr_options, EasyOcrOptions)
+        self.assertEqual(["es", "en"], pipeline_options.ocr_options.lang)
+        self.assertEqual(
+            "/tmp/docling-artifacts/EasyOcr",
+            pipeline_options.ocr_options.model_storage_directory,
+        )
+        self.assertFalse(pipeline_options.ocr_options.download_enabled)
+        self.assertFalse(pipeline_options.ocr_options.use_gpu)
+        self.assertEqual(8, pipeline_options.ocr_batch_size)
+        self.assertEqual(4, pipeline_options.layout_batch_size)
+        self.assertEqual(8, pipeline_options.table_batch_size)
+        self.assertEqual(16, pipeline_options.queue_max_size)
+        self.assertEqual(4, pipeline_options.layout_options.batch_size)
         self.assertEqual("cuda:0", pipeline_options.accelerator_options.device)
         self.assertIs(
             ProgressReportingStandardPdfPipeline,

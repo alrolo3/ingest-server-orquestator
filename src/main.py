@@ -101,7 +101,11 @@ async def lifespan(fastapi_app: FastAPI):
     )
 
     stop_event = Event()
-    inbound_worker = InboundWorker(stop_event, fastapi_app.state.metrics_store)
+    inbound_worker = InboundWorker(
+        stop_event,
+        fastapi_app.state.metrics_store,
+        server_config=fastapi_app.state.server_config,
+    )
     inbound_thread = Thread(
         target=inbound_worker.run_forever,
         name="inbound-worker",

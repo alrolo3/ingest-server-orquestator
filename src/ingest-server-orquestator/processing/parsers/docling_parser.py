@@ -10,8 +10,16 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.backend_options import PdfBackendOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.chart_extraction_options import ChartExtractionModelOptions
-from docling.datamodel.pipeline_options import ThreadedPdfPipelineOptions, CodeFormulaVlmOptions, \
-    PictureDescriptionApiOptions, TableStructureOptions, TableFormerMode, OcrAutoOptions
+from docling.datamodel.pipeline_options import (
+    CodeFormulaVlmOptions,
+    EasyOcrOptions,
+    OcrAutoOptions,
+    PictureDescriptionApiOptions,
+    RapidOcrOptions,
+    TableFormerMode,
+    TableStructureOptions,
+    ThreadedPdfPipelineOptions,
+)
 from docling.document_converter import PdfFormatOption, DocumentConverter
 from docling_core.types.doc.document import DocItemLabel, DoclingDocument
 from docling_pp_doc_layout.options import PPDocLayoutV3Options
@@ -49,6 +57,71 @@ def _job_source_path(job: Job) -> Path:
         raise FileNotFoundError(f"Job file does not exist: {source_path}")
 
     return source_path
+
+
+_RAPID_OCR_LANG_ALIASES = {
+    "en": "english",
+    "eng": "english",
+    "english": "english",
+    "zh": "chinese",
+    "chi": "chinese",
+    "cn": "chinese",
+    "chinese": "chinese",
+}
+
+
+def _rapid_ocr_langs(langs: list[str]) -> list[str]:
+    normalized_langs: list[str] = []
+    unsupported_langs: list[str] = []
+
+    for lang in langs:
+        normalized = _RAPID_OCR_LANG_ALIASES.get(lang.strip().lower())
+        if normalized is None:
+            unsupported_langs.append(lang)
+            continue
+        normalized_langs.append(normalized)
+
+    if unsupported_langs:
+        raise ValueError(
+            "RapidOCR supports only english/chinese in this Docling version; "
+            f"unsupported configured language(s): {', '.join(unsupported_langs)}"
+        )
+
+    return list(dict.fromkeys(normalized_langs)) or ["english"]
+
+
+def _docling_ocr_options(
+    config_server: ServerConfig,
+) -> OcrAutoOptions | EasyOcrOptions | RapidOcrOptions:
+    common_options = {
+        "lang": config_server.docling_ocr_langs,
+        "force_full_page_ocr": config_server.docling_force_full_page_ocr,
+        "bitmap_area_threshold": config_server.docling_ocr_bitmap_area_threshold,
+    }
+    engine = config_server.docling_ocr_engine.strip().lower()
+
+    if engine == "auto":
+        return OcrAutoOptions(**common_options)
+
+    if engine == "easyocr":
+        return EasyOcrOptions(
+            **common_options,
+            model_storage_directory=str(config_server.docling_artifacts_path / "EasyOcr"),
+            download_enabled=False,
+            use_gpu=False,
+        )
+
+    if engine == "rapidocr":
+        rapid_options = dict(common_options)
+        rapid_options["lang"] = _rapid_ocr_langs(config_server.docling_ocr_langs)
+        return RapidOcrOptions(
+            **rapid_options,
+        )
+
+    raise ValueError(
+        "Unsupported DOCLING_OCR_ENGINE value: "
+        f"{config_server.docling_ocr_engine}. Use auto, easyocr, or rapidocr."
+    )
 
 
 class DoclingParser(AbstractParser):
@@ -115,7 +188,7 @@ class DoclingParser(AbstractParser):
             # Main PDF processing stages
             # ---------------------------------------------------------------------
             do_table_structure=True,
-            do_ocr=True,
+            do_ocr=config_server.docling_ocr_enabled,
             do_code_enrichment=True,
             do_formula_enrichment=False,
             # Use backend-native PDF text instead of layout model text detection
@@ -132,18 +205,14 @@ class DoclingParser(AbstractParser):
             # OCR
             # ---------------------------------------------------------------------
 
-            ocr_options=OcrAutoOptions(
-                lang=["en"],  # OCR language(s)
-                #use_gpu=True,  # Optional: force GPU
-                force_full_page_ocr=False
-            ),
+            ocr_options=_docling_ocr_options(config_server),
 
             # ---------------------------------------------------------------------
             # Layout analysis
             # ---------------------------------------------------------------------
 
             layout_options=PPDocLayoutV3Options(
-                batch_size=32,  # Tweak for GPU VRAM usage
+                batch_size=config_server.docling_layout_batch_size,
                 confidence_threshold=0.3,  # Filter low-confidence detections
                 model_name=str(config_server.docling_pp_layout_model_path)
 
@@ -159,11 +228,11 @@ class DoclingParser(AbstractParser):
             # ---------------------------------------------------------------------
             # Threaded pipeline batching
             # ---------------------------------------------------------------------
-            ocr_batch_size=64,
-            layout_batch_size=64,
-            table_batch_size=64,
+            ocr_batch_size=config_server.docling_ocr_batch_size,
+            layout_batch_size=config_server.docling_layout_batch_size,
+            table_batch_size=config_server.docling_table_batch_size,
             batch_polling_interval_seconds=0.05,
-            queue_max_size=64,
+            queue_max_size=config_server.docling_queue_max_size,
         )
 
         # backend_options = ThreadedDoclingParseBackendOptions(parser_threads=4, enable_remote_fetch=True, enable_local_fetch=False, release_native_memory_every_n_pages=256, kind="threaded-docling-parse")

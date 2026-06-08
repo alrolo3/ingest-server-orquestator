@@ -155,8 +155,11 @@ class DoclingChunkerTest(unittest.TestCase):
                 app_name="test",
                 environment="test",
                 inbound_queue_name="queue",
+                worker_max_workers=1,
                 chunk_max_tokens=128,
                 tokenizer_path=Path("/tmp/tokenizer"),
+                docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
             ),
         )
         chunker._chunker = FakeDoclingChunker([doc_chunk])

@@ -13,6 +13,7 @@ def configure_gpu_environment(server_config: ServerConfig | None = None) -> None
     os.environ["CUDA_VISIBLE_DEVICES"] = config.visible_cuda_devices
     os.environ["DOCLING_DEVICE"] = config.docling_device
     os.environ["DOCLING_ARTIFACTS_PATH"] = str(config.docling_artifacts_path)
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
 

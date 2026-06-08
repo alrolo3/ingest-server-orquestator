@@ -8,6 +8,7 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestat
 sys.path.insert(0, str(SRC_DIR))
 
 from config import config as config_module
+from config.gpu import configure_gpu_environment
 from dispatcher.elastic.elastic import build_open_rag_mappings
 
 
@@ -24,6 +25,7 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("ingest-server-orquestator", settings.app_name)
         self.assertEqual("local", settings.environment)
         self.assertEqual("inbound", settings.inbound_queue_name)
+        self.assertEqual(1, settings.worker_max_workers)
         self.assertEqual(8192, settings.chunk_max_tokens)
         self.assertEqual(Path("/tokenizer"), settings.tokenizer_path)
         self.assertEqual(
@@ -38,6 +40,15 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
         self.assertEqual("cuda:0", settings.docling_device)
+        self.assertTrue(settings.docling_ocr_enabled)
+        self.assertEqual("easyocr", settings.docling_ocr_engine)
+        self.assertEqual(["es", "en"], settings.docling_ocr_langs)
+        self.assertFalse(settings.docling_force_full_page_ocr)
+        self.assertEqual(0.05, settings.docling_ocr_bitmap_area_threshold)
+        self.assertEqual(8, settings.docling_ocr_batch_size)
+        self.assertEqual(4, settings.docling_layout_batch_size)
+        self.assertEqual(8, settings.docling_table_batch_size)
+        self.assertEqual(16, settings.docling_queue_max_size)
         self.assertEqual(["https://localhost:9200"], settings.elastic_hosts)
         self.assertEqual(
             "RW9RbG1aNEJ4QVZwbFVaNjNhOEc6QTY1b1V2cDU4MUUxWHZjeTkxTkx4UQ==",
@@ -72,6 +83,9 @@ class ServerConfigTest(unittest.TestCase):
             "DOCLING_DEVICE": "cuda:1",
             "TOKENIZER_PATH": "/tmp/tokenizer",
             "DOCLING_ARTIFACTS_PATH": "/tmp/docling-artifacts",
+            "DOCLING_OCR_ENGINE": "rapidocr",
+            "DOCLING_OCR_LANGS": "english",
+            "INGEST_WORKER_MAX_WORKERS": "2",
         }
         with patch.dict(os.environ, env, clear=True):
             config_module._SERVER_CONFIG = None
@@ -80,6 +94,7 @@ class ServerConfigTest(unittest.TestCase):
 
         self.assertEqual("ingest-server-orquestator", settings.app_name)
         self.assertEqual("inbound", settings.inbound_queue_name)
+        self.assertEqual(2, settings.worker_max_workers)
         self.assertEqual(8192, settings.chunk_max_tokens)
         self.assertEqual(Path("/tokenizer"), settings.tokenizer_path)
         self.assertEqual(
@@ -94,6 +109,29 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
         self.assertEqual("cuda:0", settings.docling_device)
+        self.assertEqual("rapidocr", settings.docling_ocr_engine)
+        self.assertEqual(["english"], settings.docling_ocr_langs)
+
+    def test_configure_gpu_environment_sets_offline_model_environment(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            config_module._SERVER_CONFIG = None
+            settings = config_module.load_server_config()
+
+            configure_gpu_environment(settings)
+
+            self.assertEqual("PCI_BUS_ID", os.environ["CUDA_DEVICE_ORDER"])
+            self.assertEqual("0", os.environ["CUDA_VISIBLE_DEVICES"])
+            self.assertEqual("cuda:0", os.environ["DOCLING_DEVICE"])
+            self.assertEqual(
+                "/docling-models/artifacts",
+                os.environ["DOCLING_ARTIFACTS_PATH"],
+            )
+            self.assertEqual(
+                "expandable_segments:True",
+                os.environ["PYTORCH_CUDA_ALLOC_CONF"],
+            )
+            self.assertEqual("1", os.environ["HF_HUB_OFFLINE"])
+            self.assertEqual("1", os.environ["TRANSFORMERS_OFFLINE"])
 
     def test_load_server_config_uses_environment_overrides(self) -> None:
         env = {
@@ -111,6 +149,16 @@ class ServerConfigTest(unittest.TestCase):
             "ELASTIC_BULK_BATCH_SIZE": "25",
             "ELASTIC_BULK_MAX_RETRIES": "2",
             "DOCLING_PICTURE_DESCRIPTION_URL": "http://vlm:8007/v1/chat/completions",
+            "DOCLING_OCR_ENABLED": "false",
+            "DOCLING_OCR_ENGINE": "auto",
+            "DOCLING_OCR_LANGS": "en,es",
+            "DOCLING_FORCE_FULL_PAGE_OCR": "true",
+            "DOCLING_OCR_BITMAP_AREA_THRESHOLD": "0.1",
+            "INGEST_WORKER_MAX_WORKERS": "0",
+            "DOCLING_OCR_BATCH_SIZE": "3",
+            "DOCLING_LAYOUT_BATCH_SIZE": "2",
+            "DOCLING_TABLE_BATCH_SIZE": "5",
+            "DOCLING_QUEUE_MAX_SIZE": "7",
         }
         with patch.dict(os.environ, env, clear=True):
             config_module._SERVER_CONFIG = None
@@ -120,6 +168,7 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("ingest-server-orquestator", settings.app_name)
         self.assertEqual("prod", settings.environment)
         self.assertEqual("inbound", settings.inbound_queue_name)
+        self.assertEqual(1, settings.worker_max_workers)
         self.assertEqual(8192, settings.chunk_max_tokens)
         self.assertEqual(Path("/tokenizer"), settings.tokenizer_path)
         self.assertEqual(
@@ -134,6 +183,15 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
         self.assertEqual("cuda:0", settings.docling_device)
+        self.assertFalse(settings.docling_ocr_enabled)
+        self.assertEqual("auto", settings.docling_ocr_engine)
+        self.assertEqual(["en", "es"], settings.docling_ocr_langs)
+        self.assertTrue(settings.docling_force_full_page_ocr)
+        self.assertEqual(0.1, settings.docling_ocr_bitmap_area_threshold)
+        self.assertEqual(3, settings.docling_ocr_batch_size)
+        self.assertEqual(2, settings.docling_layout_batch_size)
+        self.assertEqual(5, settings.docling_table_batch_size)
+        self.assertEqual(7, settings.docling_queue_max_size)
         self.assertEqual(
             ["https://one:9200", "https://two:9200"],
             settings.elastic_hosts,
@@ -144,11 +202,11 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("custom-inference", settings.elastic_inference_id)
         self.assertTrue(settings.elastic_verify_certs)
         self.assertTrue(settings.elastic_ssl_show_warn)
-        self.assertTrue(settings.elastic_http_compress)
-        self.assertEqual("30m", settings.elastic_bulk_api_timeout)
-        self.assertEqual(1800, settings.elastic_bulk_request_timeout_seconds)
-        self.assertEqual(100, settings.elastic_bulk_batch_size)
-        self.assertEqual(5, settings.elastic_bulk_max_retries)
+        self.assertFalse(settings.elastic_http_compress)
+        self.assertEqual("10m", settings.elastic_bulk_api_timeout)
+        self.assertEqual(600, settings.elastic_bulk_request_timeout_seconds)
+        self.assertEqual(25, settings.elastic_bulk_batch_size)
+        self.assertEqual(2, settings.elastic_bulk_max_retries)
         self.assertEqual(
             "http://vlm:8007/v1/chat/completions",
             settings.docling_picture_description_url,
