@@ -11,6 +11,10 @@ All notable changes to this project should be documented in this file.
 - Added configurable ingest worker concurrency and Docling layout/table queue
   batch sizes for GPU memory control.
 - Added the EasyOCR runtime dependency required by the default OCR engine.
+- Added a configurable MinerU OCR backend for Docling, selected with
+  `DOCLING_OCR_ENGINE=mineru`.
+- Added the MinerU utility runtime dependency without changing the pinned
+  Transformers version.
 
 ### Changed
 

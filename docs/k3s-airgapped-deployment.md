@@ -13,6 +13,7 @@ The app expects these paths inside the container:
 | `/outputs` | Generated markdown outputs | Read/write |
 | `/tokenizer` | Tokenizer folder used by chunking | Read-only |
 | `/docling-models/artifacts` | Docling model artifacts | Read-only |
+| `/docling-models/models/MinerU2.5-Pro-2605-1.2B` | MinerU OCR model folder | Read-only |
 | `/docling-models/pp-doclayout-v3` | PP-DocLayoutV3 Hugging Face model folder | Read-only |
 
 Do not configure these paths with environment variables. Select the actual host
@@ -26,6 +27,8 @@ For a local PV rooted at `/datastore/models`, use:
 /datastore/models/
   docling/
     artifacts/
+    models/
+      MinerU2.5-Pro-2605-1.2B/
     pp-doclayout-v3/
   tokenizers/
     qwen3-embedding-4b/
@@ -210,6 +213,10 @@ offline EasyOCR with Spanish and English:
 DOCLING_OCR_ENABLED=true
 DOCLING_OCR_ENGINE=easyocr
 DOCLING_OCR_LANGS=es,en
+DOCLING_MINERU_DEVICE=auto
+DOCLING_MINERU_DTYPE=auto
+DOCLING_MINERU_BATCH_SIZE=1
+DOCLING_MINERU_IMAGE_ANALYSIS=false
 DOCLING_FORCE_FULL_PAGE_OCR=false
 DOCLING_OCR_BITMAP_AREA_THRESHOLD=0.05
 DOCLING_OCR_BATCH_SIZE=8
@@ -221,8 +228,13 @@ DOCLING_QUEUE_MAX_SIZE=16
 This expects EasyOCR artifacts under `/docling-models/artifacts/EasyOcr`.
 The default EasyOCR path runs OCR on CPU so GPU memory is reserved for layout
 and VLM stages.
-`DOCLING_OCR_ENGINE=rapidocr` is available for RapidOCR, but in this Docling
-version RapidOCR language support is limited to `english` and `chinese`.
+`DOCLING_OCR_ENGINE=mineru` is available for MinerU OCR and expects the model
+under `/docling-models/models/MinerU2.5-Pro-2605-1.2B`. The MinerU adapter uses
+the pinned Transformers dependency from this project; do not install
+`mineru-vl-utils[transformers]`, because that extra requires a different
+Transformers major version. `DOCLING_OCR_ENGINE=rapidocr` is also available for
+RapidOCR, but in this Docling version RapidOCR language support is limited to
+`english` and `chinese`.
 Use `DOCLING_OCR_ENABLED=false` for digitally native PDFs when OCR adds noise or
 runtime without improving extraction.
 
@@ -241,18 +253,20 @@ single worker, lower `DOCLING_LAYOUT_BATCH_SIZE` first.
 
 ## Download Models On An Internet-Connected Machine
 
-Install the same project dependencies or at least Docling and Hugging Face tools:
+Install the same project dependencies or at least Docling, MinerU utilities, and
+Hugging Face tools:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install docling huggingface_hub
+pip install docling mineru-vl-utils==1.0.4 huggingface_hub
 ```
 
 Create the target model layout:
 
 ```bash
 mkdir -p /datastore/models/docling/artifacts
+mkdir -p /datastore/models/docling/models/MinerU2.5-Pro-2605-1.2B
 mkdir -p /datastore/models/docling/pp-doclayout-v3
 mkdir -p /datastore/models/tokenizers/qwen3-embedding-4b
 ```
@@ -277,6 +291,14 @@ mounts:
 ```bash
 huggingface-cli download PaddlePaddle/PP-DocLayoutV3_safetensors \
   --local-dir /datastore/models/docling/pp-doclayout-v3 \
+  --local-dir-use-symlinks False
+```
+
+Download the MinerU OCR model into the exact folder the app mounts:
+
+```bash
+huggingface-cli download opendatalab/MinerU2.5-Pro-2605-1.2B \
+  --local-dir /datastore/models/docling/models/MinerU2.5-Pro-2605-1.2B \
   --local-dir-use-symlinks False
 ```
 
@@ -311,6 +333,7 @@ Verify the required folders exist:
 
 ```bash
 test -d /datastore/models/docling/artifacts
+test -d /datastore/models/docling/models/MinerU2.5-Pro-2605-1.2B
 test -d /datastore/models/docling/pp-doclayout-v3
 test -d /datastore/models/tokenizers/qwen3-embedding-4b
 ```
@@ -334,3 +357,4 @@ vLLM service in the air-gapped cluster.
 - Docling CLI reference for `docling-tools models download`, `--all`, and
   `download-hf-repo`: https://docling-project.github.io/docling/reference/cli/
 - Docling model catalog: https://docling-project.github.io/docling/usage/model_catalog/
+- MinerU model: https://huggingface.co/opendatalab/MinerU2.5-Pro-2605-1.2B

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from config.paths import (
     DOCLING_ARTIFACTS_PATH,
+    DOCLING_MINERU_MODEL_PATH,
     DOCLING_PP_LAYOUT_MODEL_PATH,
     TOKENIZER_PATH,
 )
@@ -28,6 +29,10 @@ _DOCLING_DEVICE = "cuda:0"
 _DOCLING_OCR_ENABLED = True
 _DOCLING_OCR_ENGINE = "easyocr"
 _DOCLING_EASY_OCR_LANGS = ["es", "en"]
+_DOCLING_MINERU_DEVICE = "auto"
+_DOCLING_MINERU_DTYPE = "auto"
+_DOCLING_MINERU_BATCH_SIZE = 1
+_DOCLING_MINERU_IMAGE_ANALYSIS = False
 _DOCLING_RAPID_OCR_LANGS = ["english"]
 _DOCLING_AUTO_OCR_LANGS: list[str] = []
 _DOCLING_FORCE_FULL_PAGE_OCR = False
@@ -56,6 +61,7 @@ class ServerConfig:
     tokenizer_path: Path
     docling_artifacts_path: Path
     docling_pp_layout_model_path: Path
+    docling_mineru_model_path: Path = DOCLING_MINERU_MODEL_PATH
     worker_max_workers: int = _WORKER_MAX_WORKERS
     cuda_device_order: str = _CUDA_DEVICE_ORDER
     visible_cuda_devices: str = _VISIBLE_CUDA_DEVICES
@@ -64,6 +70,10 @@ class ServerConfig:
     docling_ocr_enabled: bool = _DOCLING_OCR_ENABLED
     docling_ocr_engine: str = _DOCLING_OCR_ENGINE
     docling_ocr_langs: list[str] = field(default_factory=_default_docling_ocr_langs)
+    docling_mineru_device: str = _DOCLING_MINERU_DEVICE
+    docling_mineru_dtype: str = _DOCLING_MINERU_DTYPE
+    docling_mineru_batch_size: int = _DOCLING_MINERU_BATCH_SIZE
+    docling_mineru_image_analysis: bool = _DOCLING_MINERU_IMAGE_ANALYSIS
     docling_force_full_page_ocr: bool = _DOCLING_FORCE_FULL_PAGE_OCR
     docling_ocr_bitmap_area_threshold: float = _DOCLING_OCR_BITMAP_AREA_THRESHOLD
     docling_ocr_batch_size: int = _DOCLING_OCR_BATCH_SIZE
@@ -158,6 +168,7 @@ def _load_server_config_from_env() -> ServerConfig:
         tokenizer_path=TOKENIZER_PATH,
         docling_artifacts_path=DOCLING_ARTIFACTS_PATH,
         docling_pp_layout_model_path=DOCLING_PP_LAYOUT_MODEL_PATH,
+        docling_mineru_model_path=DOCLING_MINERU_MODEL_PATH,
         cuda_device_order=_CUDA_DEVICE_ORDER,
         visible_cuda_devices=_VISIBLE_CUDA_DEVICES,
         logical_cuda_device_index=_LOGICAL_CUDA_DEVICE_INDEX,
@@ -167,6 +178,24 @@ def _load_server_config_from_env() -> ServerConfig:
         docling_ocr_langs=_env_list(
             "DOCLING_OCR_LANGS",
             _default_ocr_langs_for_engine(docling_ocr_engine),
+        ),
+        docling_mineru_device=getenv(
+            "DOCLING_MINERU_DEVICE",
+            _DOCLING_MINERU_DEVICE,
+        ).strip()
+        or _DOCLING_MINERU_DEVICE,
+        docling_mineru_dtype=getenv(
+            "DOCLING_MINERU_DTYPE",
+            _DOCLING_MINERU_DTYPE,
+        ).strip()
+        or _DOCLING_MINERU_DTYPE,
+        docling_mineru_batch_size=max(
+            1,
+            _env_int("DOCLING_MINERU_BATCH_SIZE", _DOCLING_MINERU_BATCH_SIZE),
+        ),
+        docling_mineru_image_analysis=_env_bool(
+            "DOCLING_MINERU_IMAGE_ANALYSIS",
+            _DOCLING_MINERU_IMAGE_ANALYSIS,
         ),
         docling_force_full_page_ocr=_env_bool(
             "DOCLING_FORCE_FULL_PAGE_OCR",

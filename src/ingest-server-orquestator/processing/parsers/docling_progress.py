@@ -4,13 +4,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 import logging
+from pathlib import Path
 from typing import Any
 
+from docling.models.factories import get_ocr_factory
 from docling.pipeline import standard_pdf_pipeline as std_pdf
 from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 
 from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
+from processing.parsers.mineru_ocr_model import MinerU, MinerUOcrOptions
 
 
 _CURRENT_PROGRESS: ContextVar[ProgressReporter | None] = ContextVar(
@@ -49,6 +52,26 @@ def docling_progress(progress: ProgressReporter) -> Iterator[None]:
 
 class ProgressReportingStandardPdfPipeline(StandardPdfPipeline):
     """Docling pipeline that reports page progress through the generic reporter."""
+
+    def _make_ocr_model(self, art_path: Path | None) -> object:
+        options = self.pipeline_options.ocr_options
+        if isinstance(options, MinerUOcrOptions):
+            return MinerU(
+                options=options,
+                enabled=self.pipeline_options.do_ocr,
+                artifacts_path=art_path,
+                accelerator_options=self.pipeline_options.accelerator_options,
+            )
+
+        factory = get_ocr_factory(
+            allow_external_plugins=self.pipeline_options.allow_external_plugins,
+        )
+        return factory.create_instance(
+            options=options,
+            enabled=self.pipeline_options.do_ocr,
+            artifacts_path=art_path,
+            accelerator_options=self.pipeline_options.accelerator_options,
+        )
 
     def _build_document(
         self,

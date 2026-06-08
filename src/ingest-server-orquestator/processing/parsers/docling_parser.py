@@ -34,6 +34,7 @@ from processing.parsers.docling_progress import (
     ProgressReportingStandardPdfPipeline,
     docling_progress,
 )
+from processing.parsers.mineru_ocr_model import MinerUOcrOptions
 from queues.domain.job import Job
 
 
@@ -92,7 +93,7 @@ def _rapid_ocr_langs(langs: list[str]) -> list[str]:
 
 def _docling_ocr_options(
     config_server: ServerConfig,
-) -> OcrAutoOptions | EasyOcrOptions | RapidOcrOptions:
+) -> OcrAutoOptions | EasyOcrOptions | RapidOcrOptions | MinerUOcrOptions:
     common_options = {
         "lang": config_server.docling_ocr_langs,
         "force_full_page_ocr": config_server.docling_force_full_page_ocr,
@@ -111,6 +112,16 @@ def _docling_ocr_options(
             use_gpu=False,
         )
 
+    if engine == "mineru":
+        return MinerUOcrOptions(
+            **common_options,
+            model_path=str(config_server.docling_mineru_model_path),
+            device=config_server.docling_mineru_device,
+            dtype=config_server.docling_mineru_dtype,
+            batch_size=config_server.docling_mineru_batch_size,
+            image_analysis=config_server.docling_mineru_image_analysis,
+        )
+
     if engine == "rapidocr":
         rapid_options = dict(common_options)
         rapid_options["lang"] = _rapid_ocr_langs(config_server.docling_ocr_langs)
@@ -120,7 +131,7 @@ def _docling_ocr_options(
 
     raise ValueError(
         "Unsupported DOCLING_OCR_ENGINE value: "
-        f"{config_server.docling_ocr_engine}. Use auto, easyocr, or rapidocr."
+        f"{config_server.docling_ocr_engine}. Use auto, easyocr, mineru, or rapidocr."
     )
 
 

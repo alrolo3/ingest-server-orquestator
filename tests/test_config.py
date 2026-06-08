@@ -36,6 +36,10 @@ class ServerConfigTest(unittest.TestCase):
             Path("/docling-models/pp-doclayout-v3"),
             settings.docling_pp_layout_model_path,
         )
+        self.assertEqual(
+            Path("/docling-models/models/MinerU2.5-Pro-2605-1.2B"),
+            settings.docling_mineru_model_path,
+        )
         self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
         self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
@@ -43,6 +47,10 @@ class ServerConfigTest(unittest.TestCase):
         self.assertTrue(settings.docling_ocr_enabled)
         self.assertEqual("easyocr", settings.docling_ocr_engine)
         self.assertEqual(["es", "en"], settings.docling_ocr_langs)
+        self.assertEqual("auto", settings.docling_mineru_device)
+        self.assertEqual("auto", settings.docling_mineru_dtype)
+        self.assertEqual(1, settings.docling_mineru_batch_size)
+        self.assertFalse(settings.docling_mineru_image_analysis)
         self.assertFalse(settings.docling_force_full_page_ocr)
         self.assertEqual(0.05, settings.docling_ocr_bitmap_area_threshold)
         self.assertEqual(8, settings.docling_ocr_batch_size)
@@ -83,6 +91,7 @@ class ServerConfigTest(unittest.TestCase):
             "DOCLING_DEVICE": "cuda:1",
             "TOKENIZER_PATH": "/tmp/tokenizer",
             "DOCLING_ARTIFACTS_PATH": "/tmp/docling-artifacts",
+            "DOCLING_MINERU_DEVICE": "cpu",
             "DOCLING_OCR_ENGINE": "rapidocr",
             "DOCLING_OCR_LANGS": "english",
             "INGEST_WORKER_MAX_WORKERS": "2",
@@ -105,12 +114,17 @@ class ServerConfigTest(unittest.TestCase):
             Path("/docling-models/pp-doclayout-v3"),
             settings.docling_pp_layout_model_path,
         )
+        self.assertEqual(
+            Path("/docling-models/models/MinerU2.5-Pro-2605-1.2B"),
+            settings.docling_mineru_model_path,
+        )
         self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
         self.assertEqual("0", settings.visible_cuda_devices)
         self.assertEqual(0, settings.logical_cuda_device_index)
         self.assertEqual("cuda:0", settings.docling_device)
         self.assertEqual("rapidocr", settings.docling_ocr_engine)
         self.assertEqual(["english"], settings.docling_ocr_langs)
+        self.assertEqual("cpu", settings.docling_mineru_device)
 
     def test_configure_gpu_environment_sets_offline_model_environment(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -152,6 +166,10 @@ class ServerConfigTest(unittest.TestCase):
             "DOCLING_OCR_ENABLED": "false",
             "DOCLING_OCR_ENGINE": "auto",
             "DOCLING_OCR_LANGS": "en,es",
+            "DOCLING_MINERU_DEVICE": "cpu",
+            "DOCLING_MINERU_DTYPE": "bfloat16",
+            "DOCLING_MINERU_BATCH_SIZE": "2",
+            "DOCLING_MINERU_IMAGE_ANALYSIS": "true",
             "DOCLING_FORCE_FULL_PAGE_OCR": "true",
             "DOCLING_OCR_BITMAP_AREA_THRESHOLD": "0.1",
             "INGEST_WORKER_MAX_WORKERS": "0",
@@ -186,6 +204,10 @@ class ServerConfigTest(unittest.TestCase):
         self.assertFalse(settings.docling_ocr_enabled)
         self.assertEqual("auto", settings.docling_ocr_engine)
         self.assertEqual(["en", "es"], settings.docling_ocr_langs)
+        self.assertEqual("cpu", settings.docling_mineru_device)
+        self.assertEqual("bfloat16", settings.docling_mineru_dtype)
+        self.assertEqual(2, settings.docling_mineru_batch_size)
+        self.assertTrue(settings.docling_mineru_image_analysis)
         self.assertTrue(settings.docling_force_full_page_ocr)
         self.assertEqual(0.1, settings.docling_ocr_bitmap_area_threshold)
         self.assertEqual(3, settings.docling_ocr_batch_size)

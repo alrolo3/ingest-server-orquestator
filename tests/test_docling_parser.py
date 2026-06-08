@@ -16,9 +16,11 @@ from config.config import ServerConfig
 from metrics.progress import NullProgressReporter
 from processing.parsers.docling_parser import (
     DoclingParser,
+    _docling_ocr_options,
     _document_title,
 )
 from processing.parsers.docling_progress import ProgressReportingStandardPdfPipeline
+from processing.parsers.mineru_ocr_model import MinerUOcrOptions
 from queues.domain.job import Job
 
 
@@ -105,6 +107,34 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual("uploaded.pdf", parsed_document.source_file_name)
         self.assertEqual(str(source_path), parsed_document.source_path)
         self.assertEqual("application/pdf", parsed_document.mime_type)
+
+    def test_docling_ocr_options_supports_mineru(self) -> None:
+        options = _docling_ocr_options(
+            ServerConfig(
+                app_name="test",
+                environment="test",
+                inbound_queue_name="inbound",
+                worker_max_workers=1,
+                chunk_max_tokens=2048,
+                tokenizer_path=Path("/tmp/tokenizer"),
+                docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+                docling_mineru_model_path=Path("/tmp/mineru"),
+                docling_ocr_engine="mineru",
+                docling_mineru_device="cpu",
+                docling_mineru_dtype="bfloat16",
+                docling_mineru_batch_size=2,
+                docling_mineru_image_analysis=True,
+            )
+        )
+
+        self.assertIsInstance(options, MinerUOcrOptions)
+        self.assertEqual(["es", "en"], options.lang)
+        self.assertEqual("/tmp/mineru", options.model_path)
+        self.assertEqual("cpu", options.device)
+        self.assertEqual("bfloat16", options.dtype)
+        self.assertEqual(2, options.batch_size)
+        self.assertTrue(options.image_analysis)
 
 
 if __name__ == "__main__":

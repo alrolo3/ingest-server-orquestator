@@ -4,7 +4,7 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 import logging
 from queue import Empty
-from threading import Event
+from threading import BoundedSemaphore, Event
 
 from config.config import ServerConfig, get_server_config
 from metrics.job_metrics import JobStage
@@ -29,6 +29,7 @@ class InboundWorker:
         self.queue = LocalQueue()
         self.metrics_store = metrics_store
         self.server_config = server_config or get_server_config()
+        self.executor_slots = BoundedSemaphore(self.server_config.worker_max_workers)
 
         self.process_pool = ProcessPoolExecutor(
             max_workers=self.server_config.worker_max_workers,
@@ -58,13 +59,24 @@ class InboundWorker:
     def run_forever(self) -> None:
         LOGGER.info("Inbound worker loop started")
         while not self.stop_event.is_set():
+            if not self.executor_slots.acquire(timeout=0.5):
+                continue
+
             try:
                 job = self.queue.get(timeout=0.5)
             except Empty:
+                self.executor_slots.release()
                 continue
 
             LOGGER.info("Dequeued ingest job job_id=%s", job.job_id)
-            future = self.process_pool.submit(job_runner, job, self.metrics_store)
+            try:
+                future = self.process_pool.submit(job_runner, job, self.metrics_store)
+            except Exception:
+                self.executor_slots.release()
+                self.queue.queue.task_done()
+                raise
+
+            future.add_done_callback(lambda _: self.executor_slots.release())
             future.add_done_callback(lambda _: self.queue.queue.task_done())
             future.add_done_callback(
                 lambda completed_future, queued_job=job: self._on_job_done(
