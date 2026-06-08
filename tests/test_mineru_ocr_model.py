@@ -10,7 +10,11 @@ sys.path.insert(0, str(SRC_DIR))
 from docling_core.types.doc import BoundingBox, CoordOrigin
 
 from processing.parsers.docling_progress import ProgressReportingStandardPdfPipeline
-from processing.parsers.mineru_ocr_model import MinerU, MinerUOcrOptions
+from processing.parsers.mineru_ocr_model import (
+    MinerU,
+    MinerUOcrOptions,
+    _ensure_max_position_embeddings,
+)
 
 
 class MinerUOcrModelTest(unittest.TestCase):
@@ -97,6 +101,33 @@ class MinerUOcrModelTest(unittest.TestCase):
 
         self.assertIs(created_model, result)
         factory.create_instance.assert_called_once()
+
+    def test_ensure_max_position_embeddings_copies_qwen_text_config_value(self) -> None:
+        config = SimpleNamespace(
+            text_config=SimpleNamespace(max_position_embeddings=32768),
+        )
+        model = SimpleNamespace(config=config)
+
+        _ensure_max_position_embeddings(model)
+
+        self.assertEqual(32768, config.max_position_embeddings)
+
+    def test_ensure_max_position_embeddings_keeps_existing_value(self) -> None:
+        config = SimpleNamespace(
+            max_position_embeddings=8192,
+            text_config=SimpleNamespace(max_position_embeddings=32768),
+        )
+        model = SimpleNamespace(config=config)
+
+        _ensure_max_position_embeddings(model)
+
+        self.assertEqual(8192, config.max_position_embeddings)
+
+    def test_ensure_max_position_embeddings_requires_model_context_length(self) -> None:
+        model = SimpleNamespace(config=SimpleNamespace(text_config=SimpleNamespace()))
+
+        with self.assertRaisesRegex(ValueError, "max_position_embeddings"):
+            _ensure_max_position_embeddings(model)
 
 
 if __name__ == "__main__":

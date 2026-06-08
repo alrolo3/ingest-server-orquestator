@@ -93,6 +93,7 @@ class MinerU(BaseOcrModel):
             dtype=self.options.dtype,
             device_map=self._device_map(),
         )
+        _ensure_max_position_embeddings(model)
         processor = AutoProcessor.from_pretrained(str(model_path), use_fast=True)
         self.client = MinerUClient(
             backend="transformers",
@@ -210,6 +211,26 @@ def _block_value(block: Any, key: str) -> Any:
     if isinstance(block, Mapping):
         return block.get(key)
     return getattr(block, key, None)
+
+
+def _ensure_max_position_embeddings(model: Any) -> None:
+    config = getattr(model, "config", None)
+    if config is None or hasattr(config, "max_position_embeddings"):
+        return
+
+    text_config = getattr(config, "text_config", None)
+    max_position_embeddings = getattr(text_config, "max_position_embeddings", None)
+    if not isinstance(max_position_embeddings, int) or max_position_embeddings <= 0:
+        raise ValueError(
+            "MinerU OCR model config does not expose max_position_embeddings "
+            "or text_config.max_position_embeddings."
+        )
+
+    setattr(config, "max_position_embeddings", max_position_embeddings)
+    LOGGER.debug(
+        "Patched MinerU OCR model config max_position_embeddings=%s",
+        max_position_embeddings,
+    )
 
 
 def _valid_bbox(value: Any) -> bool:
