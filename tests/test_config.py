@@ -24,10 +24,15 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("ingest-server-orquestator", settings.app_name)
         self.assertEqual("local", settings.environment)
         self.assertEqual("inbound", settings.inbound_queue_name)
-        self.assertEqual(2048, settings.chunk_max_tokens)
+        self.assertEqual(8192, settings.chunk_max_tokens)
+        self.assertEqual(Path("/tokenizer"), settings.tokenizer_path)
         self.assertEqual(
-            Path("/datastore/models/tokenizers/qwen3-embedding-4b/"),
-            settings.tokenizer_path,
+            Path("/docling-models/artifacts"),
+            settings.docling_artifacts_path,
+        )
+        self.assertEqual(
+            Path("/docling-models/pp-doclayout-v3"),
+            settings.docling_pp_layout_model_path,
         )
         self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
         self.assertEqual("4", settings.physical_cuda_device)
@@ -57,18 +62,44 @@ class ServerConfigTest(unittest.TestCase):
             settings.docling_picture_description_url,
         )
 
-    def test_load_server_config_uses_environment_overrides(self) -> None:
+    def test_server_config_constants_ignore_environment(self) -> None:
         env = {
             "APP_NAME": "custom-app",
-            "APP_ENV": "prod",
             "INBOUND_QUEUE_NAME": "documents",
             "CHUNK_MAX_TOKENS": "4096",
-            "TOKENIZER_PATH": "/tmp/tokenizer",
             "CUDA_DEVICE_ORDER": "FASTEST_FIRST",
-            "PHYSICAL_CUDA_DEVICE": "2",
             "CUDA_VISIBLE_DEVICES": "2,3",
             "LOGICAL_CUDA_DEVICE_INDEX": "1",
             "DOCLING_DEVICE": "cuda:1",
+            "TOKENIZER_PATH": "/tmp/tokenizer",
+            "DOCLING_ARTIFACTS_PATH": "/tmp/docling-artifacts",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config_module._SERVER_CONFIG = None
+
+            settings = config_module.load_server_config()
+
+        self.assertEqual("ingest-server-orquestator", settings.app_name)
+        self.assertEqual("inbound", settings.inbound_queue_name)
+        self.assertEqual(8192, settings.chunk_max_tokens)
+        self.assertEqual(Path("/tokenizer"), settings.tokenizer_path)
+        self.assertEqual(
+            Path("/docling-models/artifacts"),
+            settings.docling_artifacts_path,
+        )
+        self.assertEqual(
+            Path("/docling-models/pp-doclayout-v3"),
+            settings.docling_pp_layout_model_path,
+        )
+        self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
+        self.assertEqual("0", settings.visible_cuda_devices)
+        self.assertEqual(0, settings.logical_cuda_device_index)
+        self.assertEqual("cuda:0", settings.docling_device)
+
+    def test_load_server_config_uses_environment_overrides(self) -> None:
+        env = {
+            "APP_ENV": "prod",
+            "PHYSICAL_CUDA_DEVICE": "2",
             "ELASTIC_HOSTS": "https://one:9200,https://two:9200",
             "ELASTIC_API_KEY": "",
             "ELASTIC_INDEX_NAME": "custom-index",
@@ -88,16 +119,24 @@ class ServerConfigTest(unittest.TestCase):
 
             settings = config_module.load_server_config()
 
-        self.assertEqual("custom-app", settings.app_name)
+        self.assertEqual("ingest-server-orquestator", settings.app_name)
         self.assertEqual("prod", settings.environment)
-        self.assertEqual("documents", settings.inbound_queue_name)
-        self.assertEqual(4096, settings.chunk_max_tokens)
-        self.assertEqual(Path("/tmp/tokenizer"), settings.tokenizer_path)
-        self.assertEqual("FASTEST_FIRST", settings.cuda_device_order)
+        self.assertEqual("inbound", settings.inbound_queue_name)
+        self.assertEqual(8192, settings.chunk_max_tokens)
+        self.assertEqual(Path("/tokenizer"), settings.tokenizer_path)
+        self.assertEqual(
+            Path("/docling-models/artifacts"),
+            settings.docling_artifacts_path,
+        )
+        self.assertEqual(
+            Path("/docling-models/pp-doclayout-v3"),
+            settings.docling_pp_layout_model_path,
+        )
+        self.assertEqual("PCI_BUS_ID", settings.cuda_device_order)
         self.assertEqual("2", settings.physical_cuda_device)
-        self.assertEqual("2,3", settings.visible_cuda_devices)
-        self.assertEqual(1, settings.logical_cuda_device_index)
-        self.assertEqual("cuda:1", settings.docling_device)
+        self.assertEqual("0", settings.visible_cuda_devices)
+        self.assertEqual(0, settings.logical_cuda_device_index)
+        self.assertEqual("cuda:0", settings.docling_device)
         self.assertEqual(
             ["https://one:9200", "https://two:9200"],
             settings.elastic_hosts,

@@ -1,0 +1,189 @@
+# k3s Air-Gapped Deployment
+
+This service is designed to run without downloading models at runtime. Kubernetes
+mounts provide the model folders, and the application uses stable container paths.
+
+## Container Path Contract
+
+The app expects these paths inside the container:
+
+| Container path | Purpose | Access |
+| --- | --- | --- |
+| `/uploads` | Uploaded input files | Read/write |
+| `/outputs` | Generated markdown outputs | Read/write |
+| `/tokenizer` | Tokenizer folder used by chunking | Read-only |
+| `/docling-models/artifacts` | Docling model artifacts | Read-only |
+| `/docling-models/pp-doclayout-v3` | PP-DocLayoutV3 Hugging Face model folder | Read-only |
+
+Do not configure these paths with environment variables. Select the actual host
+folders using PV/PVC mounts and `subPath`.
+
+## Expected Host Layout
+
+For a local PV rooted at `/datastore/models`, use:
+
+```text
+/datastore/models/
+  docling/
+    artifacts/
+    pp-doclayout-v3/
+  tokenizers/
+    qwen3-embedding-4b/
+```
+
+For ingest data, use one writable PV/PVC and subpaths:
+
+```text
+/datastore/ingest/
+  uploads/
+  outputs/
+```
+
+## k3s Mounts
+
+Example API pod mounts:
+
+```yaml
+volumeMounts:
+  - name: ingest-data
+    mountPath: /uploads
+    subPath: uploads
+  - name: ingest-data
+    mountPath: /outputs
+    subPath: outputs
+  - name: models-llm
+    mountPath: /tokenizer
+    subPath: tokenizers/qwen3-embedding-4b
+    readOnly: true
+  - name: models-llm
+    mountPath: /docling-models
+    subPath: docling
+    readOnly: true
+
+volumes:
+  - name: ingest-data
+    persistentVolumeClaim:
+      claimName: ingest-data-pvc
+  - name: models-llm
+    persistentVolumeClaim:
+      claimName: models-llm-pvc
+      readOnly: true
+```
+
+To use a different tokenizer, change only the tokenizer `subPath`:
+
+```yaml
+subPath: tokenizers/another-tokenizer-folder
+```
+
+## Runtime Offline Behavior
+
+The application sets these internally before Docling and Transformers load:
+
+```env
+DOCLING_ARTIFACTS_PATH=/docling-models/artifacts
+HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1
+```
+
+Docling receives `artifacts_path=/docling-models/artifacts`. The custom
+PP-DocLayout model is loaded from `/docling-models/pp-doclayout-v3`.
+
+If a required model is missing, the app should fail locally instead of trying to
+download it from the internet.
+
+## Download Models On An Internet-Connected Machine
+
+Install the same project dependencies or at least Docling and Hugging Face tools:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install docling huggingface_hub
+```
+
+Create the target model layout:
+
+```bash
+mkdir -p /datastore/models/docling/artifacts
+mkdir -p /datastore/models/docling/pp-doclayout-v3
+mkdir -p /datastore/models/tokenizers/qwen3-embedding-4b
+```
+
+Download Docling's predefined model set:
+
+```bash
+docling-tools models download \
+  --output-dir /datastore/models/docling/artifacts
+```
+
+For every Docling-managed optional model available through the CLI:
+
+```bash
+docling-tools models download --all \
+  --output-dir /datastore/models/docling/artifacts
+```
+
+Download the PP-DocLayoutV3 Hugging Face repository into the exact folder the app
+mounts:
+
+```bash
+huggingface-cli download PaddlePaddle/PP-DocLayoutV3_safetensors \
+  --local-dir /datastore/models/docling/pp-doclayout-v3 \
+  --local-dir-use-symlinks False
+```
+
+Download the tokenizer folder used by the current deployment:
+
+```bash
+huggingface-cli download Qwen/Qwen3-Embedding-4B \
+  --local-dir /datastore/models/tokenizers/qwen3-embedding-4b \
+  --local-dir-use-symlinks False
+```
+
+If the tokenizer comes from another source, place that tokenizer's complete
+folder under `/datastore/models/tokenizers/<name>` and point the k3s `subPath`
+at that folder.
+
+## Move Models Into The Air-Gapped Node
+
+Package the prepared model tree:
+
+```bash
+tar -C /datastore -czf models-airgap.tar.gz models
+```
+
+Copy `models-airgap.tar.gz` to the k3s node and extract it:
+
+```bash
+sudo mkdir -p /datastore
+sudo tar -C /datastore -xzf models-airgap.tar.gz
+```
+
+Verify the required folders exist:
+
+```bash
+test -d /datastore/models/docling/artifacts
+test -d /datastore/models/docling/pp-doclayout-v3
+test -d /datastore/models/tokenizers/qwen3-embedding-4b
+```
+
+## Important External Model Service
+
+The app uses `PictureDescriptionApiOptions` and calls the service configured by
+`DOCLING_PICTURE_DESCRIPTION_URL`, currently:
+
+```env
+http://vllm-qwen35-9b:8007/v1/chat/completions
+```
+
+That VLM is not downloaded by this app. Provision its model separately for the
+vLLM service in the air-gapped cluster.
+
+## References
+
+- Docling advanced options: model prefetching, offline usage, `artifacts_path`,
+  and `DOCLING_ARTIFACTS_PATH`: https://docling-project.github.io/docling/usage/advanced_options/
+- Docling CLI reference for `docling-tools models download`, `--all`, and
+  `download-hf-repo`: https://docling-project.github.io/docling/reference/cli/
+- Docling model catalog: https://docling-project.github.io/docling/usage/model_catalog/

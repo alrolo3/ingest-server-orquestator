@@ -7,11 +7,14 @@ from config.config import ServerConfig, get_server_config
 
 
 def configure_gpu_environment(server_config: ServerConfig | None = None) -> None:
-    """Apply CUDA-related environment values from project config."""
+    """Apply runtime environment values before CUDA/model libraries load."""
     config = server_config or get_server_config()
     os.environ["CUDA_DEVICE_ORDER"] = config.cuda_device_order
     os.environ["CUDA_VISIBLE_DEVICES"] = config.visible_cuda_devices
     os.environ["DOCLING_DEVICE"] = config.docling_device
+    os.environ["DOCLING_ARTIFACTS_PATH"] = str(config.docling_artifacts_path)
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 
 def configure_torch_cuda_device(

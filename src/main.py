@@ -29,6 +29,7 @@ from fastapi import Request
 from fastapi import UploadFile
 
 from config.config import load_server_config
+from config.paths import UPLOAD_DIR
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
 from queues.queue_local import put_item
@@ -41,9 +42,6 @@ logging.basicConfig(
     force=True,
 )
 LOGGER = logging.getLogger("ingest-server-orquestator.api")
-UPLOAD_DIR = Path(
-    getenv("INGEST_UPLOAD_DIR", "/datastore/experimento-101/ingest-uploads")
-)
 
 
 def _build_metrics_store() -> tuple[object | None, JobMetricsStore]:

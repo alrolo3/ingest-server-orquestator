@@ -81,7 +81,7 @@ class DoclingParser(AbstractParser):
             # ---------------------------------------------------------------------
             # Local model artifacts
             # ---------------------------------------------------------------------
-            artifacts_path=None,
+            artifacts_path=config_server.docling_artifacts_path,
 
             # ---------------------------------------------------------------------
             # Picture classification / description / chart extraction
@@ -145,7 +145,7 @@ class DoclingParser(AbstractParser):
             layout_options=PPDocLayoutV3Options(
                 batch_size=32,  # Tweak for GPU VRAM usage
                 confidence_threshold=0.3,  # Filter low-confidence detections
-                model_name="PaddlePaddle/PP-DocLayoutV3_safetensors"  # Target HuggingFace model repo
+                model_name=str(config_server.docling_pp_layout_model_path)
 
             ),
 

@@ -7,11 +7,11 @@ configure_gpu_environment()
 import logging
 from os import getpid
 from os import getenv
-from pathlib import Path
 
 import torch
 
 from config.config import get_server_config
+from config.paths import OUTPUT_DIR
 from dispatcher.elastic.elastic import ElasticsearchDispatch
 from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
@@ -27,9 +27,6 @@ logging.basicConfig(
     force=True,
 )
 LOGGER = logging.getLogger("ingest-server-orquestator.job-runner")
-OUTPUT_DIR = Path(
-    getenv("INGEST_OUTPUT_DIR", "/datastore/experimento-101/ingest-outputs")
-)
 
 
 def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:

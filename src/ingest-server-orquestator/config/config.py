@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 from os import getenv
 from pathlib import Path
 
+from config.paths import (
+    DOCLING_ARTIFACTS_PATH,
+    DOCLING_PP_LAYOUT_MODEL_PATH,
+    TOKENIZER_PATH,
+)
 from queues.queue_local import LocalQueue
 
 
@@ -12,6 +17,13 @@ _DEFAULT_ELASTIC_API_KEY = (
     "RW9RbG1aNEJ4QVZwbFVaNjNhOEc6QTY1b1V2cDU4MUUxWHZjeTkxTkx4UQ=="
 )
 _DEFAULT_ELASTIC_INFERENCE_ID = "qwen3-embedding-4b"
+_APP_NAME = "ingest-server-orquestator"
+_INBOUND_QUEUE_NAME = "inbound"
+_CHUNK_MAX_TOKENS = 8192
+_CUDA_DEVICE_ORDER = "PCI_BUS_ID"
+_VISIBLE_CUDA_DEVICES = "0"
+_LOGICAL_CUDA_DEVICE_INDEX = 0
+_DOCLING_DEVICE = "cuda:0"
 _FALSE_VALUES = {"", "0", "false", "no", "off"}
 
 
@@ -26,11 +38,13 @@ class ServerConfig:
     inbound_queue_name: str
     chunk_max_tokens: int
     tokenizer_path: Path
-    cuda_device_order: str = "PCI_BUS_ID"
+    docling_artifacts_path: Path
+    docling_pp_layout_model_path: Path
+    cuda_device_order: str = _CUDA_DEVICE_ORDER
     physical_cuda_device: str = "4"
-    visible_cuda_devices: str = "0"
-    logical_cuda_device_index: int = 0
-    docling_device: str = "cuda:0"
+    visible_cuda_devices: str = _VISIBLE_CUDA_DEVICES
+    logical_cuda_device_index: int = _LOGICAL_CUDA_DEVICE_INDEX
+    docling_device: str = _DOCLING_DEVICE
     elastic_hosts: list[str] = field(default_factory=_default_elastic_hosts)
     elastic_api_key: str | None = _DEFAULT_ELASTIC_API_KEY
     elastic_index_name: str = "open-rag-embeddings-v3"
@@ -49,13 +63,6 @@ class ServerConfig:
 
 
 _SERVER_CONFIG: ServerConfig | None = None
-
-
-def _env_int(name: str, default: int) -> int:
-    value = getenv(name)
-    if value is None:
-        return default
-    return int(value)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -83,31 +90,22 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 
 def _load_server_config_from_env() -> ServerConfig:
     physical_cuda_device = getenv("PHYSICAL_CUDA_DEVICE", "4")
-    logical_cuda_device_index = _env_int("LOGICAL_CUDA_DEVICE_INDEX", 0)
-    visible_cuda_devices = getenv(
-        "CUDA_VISIBLE_DEVICES",
-        str(logical_cuda_device_index),
-    )
-    docling_device = getenv("DOCLING_DEVICE", f"cuda:{logical_cuda_device_index}")
     elastic_url = getenv("ELASTIC_URL")
     elastic_hosts_default = [elastic_url] if elastic_url else _DEFAULT_ELASTIC_HOSTS
 
     return ServerConfig(
-        app_name=getenv("APP_NAME", "ingest-server-orquestator"),
+        app_name=_APP_NAME,
         environment=getenv("APP_ENV", "local"),
-        inbound_queue_name=getenv("INBOUND_QUEUE_NAME", "inbound"),
-        chunk_max_tokens=_env_int("CHUNK_MAX_TOKENS", 2048),
-        tokenizer_path=Path(
-            getenv(
-                "TOKENIZER_PATH",
-                "/datastore/models/tokenizers/qwen3-embedding-4b/",
-            )
-        ),
-        cuda_device_order=getenv("CUDA_DEVICE_ORDER", "PCI_BUS_ID"),
+        inbound_queue_name=_INBOUND_QUEUE_NAME,
+        chunk_max_tokens=_CHUNK_MAX_TOKENS,
+        tokenizer_path=TOKENIZER_PATH,
+        docling_artifacts_path=DOCLING_ARTIFACTS_PATH,
+        docling_pp_layout_model_path=DOCLING_PP_LAYOUT_MODEL_PATH,
+        cuda_device_order=_CUDA_DEVICE_ORDER,
         physical_cuda_device=physical_cuda_device,
-        visible_cuda_devices=visible_cuda_devices,
-        logical_cuda_device_index=logical_cuda_device_index,
-        docling_device=docling_device,
+        visible_cuda_devices=_VISIBLE_CUDA_DEVICES,
+        logical_cuda_device_index=_LOGICAL_CUDA_DEVICE_INDEX,
+        docling_device=_DOCLING_DEVICE,
         elastic_hosts=_env_list("ELASTIC_HOSTS", elastic_hosts_default),
         elastic_api_key=_env_optional_string(
             "ELASTIC_API_KEY",

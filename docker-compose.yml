@@ -23,20 +23,9 @@ services:
       - --access-log
 
     environment:
-      APP_NAME: "${INGEST_APP_NAME:-ingest-server-orquestator}"
       APP_ENV: "${INGEST_APP_ENV:-local}"
       INGEST_LOG_LEVEL: "${INGEST_LOG_LEVEL:-INFO}"
-      INGEST_WORKSPACE_ROOT: "${INGEST_WORKSPACE_ROOT:-/datastore/experimento-101}"
-      INGEST_UPLOAD_DIR: "${INGEST_UPLOAD_DIR:-/datastore/experimento-101/ingest-uploads}"
-      INGEST_OUTPUT_DIR: "${INGEST_OUTPUT_DIR:-/datastore/experimento-101/ingest-outputs}"
-      INBOUND_QUEUE_NAME: "${INGEST_INBOUND_QUEUE_NAME:-inbound}"
-      CHUNK_MAX_TOKENS: "${INGEST_CHUNK_MAX_TOKENS:-2048}"
-      TOKENIZER_PATH: "${INGEST_TOKENIZER_PATH:-/datastore/models/tokenizers/qwen3-embedding-4b/}"
-      CUDA_DEVICE_ORDER: "${INGEST_CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
       PHYSICAL_CUDA_DEVICE: "${INGEST_PHYSICAL_CUDA_DEVICE:-4}"
-      CUDA_VISIBLE_DEVICES: "${INGEST_CUDA_VISIBLE_DEVICES:-0}"
-      LOGICAL_CUDA_DEVICE_INDEX: "${INGEST_LOGICAL_CUDA_DEVICE_INDEX:-0}"
-      DOCLING_DEVICE: "${INGEST_DOCLING_DEVICE:-cuda:0}"
       DOCLING_PICTURE_DESCRIPTION_URL: "${INGEST_DOCLING_PICTURE_DESCRIPTION_URL:-http://vllm-qwen35-9b:8007/v1/chat/completions}"
       ELASTIC_URL: "${INGEST_ELASTIC_URL:-https://elasticsearch-gpu-indexer:9200}"
       ELASTIC_HOSTS: "${INGEST_ELASTIC_HOSTS:-https://elasticsearch-gpu-indexer:9200}"
@@ -60,8 +49,10 @@ services:
                 - gpu
 
     volumes:
-      - ${EXP101_DATASTORE_ROOT:-/datastore/experimento-101}:${INGEST_WORKSPACE_ROOT:-/datastore/experimento-101}
-      - /datastore/models:/datastore/models:ro
+      - ${EXP101_DATASTORE_ROOT:-/datastore/experimento-101}/ingest-uploads:/uploads
+      - ${EXP101_DATASTORE_ROOT:-/datastore/experimento-101}/ingest-outputs:/outputs
+      - /datastore/models/tokenizers/qwen3-embedding-4b:/tokenizer:ro
+      - /datastore/models/docling:/docling-models:ro
 
     extra_hosts:
       - "host.docker.internal:host-gateway"

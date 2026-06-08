@@ -28,8 +28,7 @@ RUN python -m pip install --upgrade pip && \
 COPY ingest-server-orquestator/src ./src
 COPY ingest-server-orquestator/gradio_file_ingest ./gradio_file_ingest
 
-RUN mkdir -p /datastore/experimento-101/ingest-uploads \
-    /datastore/experimento-101/ingest-outputs
+RUN mkdir -p /uploads /outputs /tokenizer /docling-models
 
 EXPOSE 8001 7860
 
