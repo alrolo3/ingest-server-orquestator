@@ -97,8 +97,6 @@ steps:
           - headings
           - page_start
           - page_end
-          - page_number
-          - page_numbers
           - source_file_name
           - language
           - content_kind
@@ -210,10 +208,8 @@ steps:
         content: "{{ item._source.content }}"
         source_file_name: "{{ item._source.source_file_name }}"
         language: "{{ item._source.language }}"
-        page_start: "{{ item._source.page_start | default: item._source.page_number | default: item._source.page_numbers.first }}"
-        page_end: "{{ item._source.page_end | default: item._source.page_numbers.last | default: item._source.page_number | default: item._source.page_start }}"
-        page_number: "{{ item._source.page_number }}"
-        page_numbers: "${{ item._source.page_numbers }}"
+        page_start: "{{ item._source.page_start }}"
+        page_end: "{{ item._source.page_end }}"
         content_kind: "{{ item._source.content_kind }}"
         chunk_quality: "{{ item._source.chunk_quality }}"
 
@@ -239,8 +235,6 @@ steps:
             "headings",
             "page_start",
             "page_end",
-            "page_number",
-            "page_numbers",
             "source_file_name",
             "language",
             "content_kind",
@@ -255,33 +249,16 @@ steps:
               ],
               "should": [
                 {% for hit in steps.rrf_multilingual_retrieval.output.hits.hits %}
-                {% assign first_page_number = hit._source.page_number | default: hit._source.page_numbers.first | default: 0 %}
-                {% assign last_page_number = hit._source.page_numbers.last | default: first_page_number %}
-                {% assign page_start = hit._source.page_start | default: first_page_number %}
-                {% assign page_end = hit._source.page_end | default: last_page_number %}
+                {% assign page_start = hit._source.page_start | default: hit._source.page_end | default: 0 %}
+                {% assign page_end = hit._source.page_end | default: hit._source.page_start | default: page_start %}
                 {
                   "constant_score": {
                     "filter": {
                       "bool": {
                         "filter": [
                           { "term": { "document_id": "{{ hit._source.document_id }}" } },
-                          {
-                            "bool": {
-                              "should": [
-                                { "range": { "page_numbers": { "gte": {{ page_start | minus: 1 }}, "lte": {{ page_end | plus: 1 }} } } },
-                                { "range": { "page_number": { "gte": {{ page_start | minus: 1 }}, "lte": {{ page_end | plus: 1 }} } } },
-                                {
-                                  "bool": {
-                                    "filter": [
-                                      { "range": { "page_start": { "lte": {{ page_end | plus: 1 }} } } },
-                                      { "range": { "page_end": { "gte": {{ page_start | minus: 1 }} } } }
-                                    ]
-                                  }
-                                }
-                              ],
-                              "minimum_should_match": 1
-                            }
-                          }
+                          { "range": { "page_start": { "lte": {{ page_end | plus: 1 }} } } },
+                          { "range": { "page_end": { "gte": {{ page_start | minus: 1 }} } } }
                         ]
                       }
                     }
@@ -310,10 +287,8 @@ steps:
         content: "{{ item._source.content }}"
         source_file_name: "{{ item._source.source_file_name }}"
         language: "{{ item._source.language }}"
-        page_start: "{{ item._source.page_start | default: item._source.page_number | default: item._source.page_numbers.first }}"
-        page_end: "{{ item._source.page_end | default: item._source.page_numbers.last | default: item._source.page_number | default: item._source.page_start }}"
-        page_number: "{{ item._source.page_number }}"
-        page_numbers: "${{ item._source.page_numbers }}"
+        page_start: "{{ item._source.page_start }}"
+        page_end: "{{ item._source.page_end }}"
         content_kind: "{{ item._source.content_kind }}"
         chunk_quality: "{{ item._source.chunk_quality }}"
 
@@ -329,4 +304,4 @@ steps:
       retrieval_strategy: Conversation-aware standalone query rewrite; RRF over standalone multilingual lexical, original question lexical, English lexical, Spanish lexical, and semantic standalone branches; followed by same-page and neighboring-page expansion. Language is used for recall variants, not filtering.
       documents: "${{ steps.map_expanded_context_hits.output }}"
       initial_rrf_documents: "${{ steps.map_rrf_hits.output }}"
-      instruction: Answer the current user question using only documents as grounding context. Answer in answer_language. If documents are empty or insufficient, say that the available documents do not provide enough information. Do not invent facts, URLs, citations, page numbers, or details not present in documents. Always finish with a references section. Each reference must be ordered as filename, pages, chunk, then chapter/header/context. Use source_file_name as the filename; if missing, write filename unknown. Use page_start/page_end, page_number, or page_numbers from the document metadata; if no page metadata is present, write page unknown. Use chunk_id as the chunk; if missing, write id unknown. Use headings or a short grounded context phrase from content as the chapter/header/context; if missing, write header unknown.
+      instruction: Answer the current user question using only documents as grounding context. Answer in answer_language. If documents are empty or insufficient, say that the available documents do not provide enough information. Cite/reference document titles, clean titles, source file names, and pages when available. Do not invent facts, URLs, citations, page numbers, or details not present in documents.
