@@ -12,6 +12,8 @@ import requests
 DEFAULT_BACKEND_URL = os.getenv("INGEST_API_URL", "http://127.0.0.1:8000")
 INGEST_FILE_ENDPOINT = "/api/v1/ingest/file"
 INGEST_JOBS_ENDPOINT = "/api/v1/ingest/jobs"
+GRADIO_SERVER_NAME = "0.0.0.0"
+GRADIO_SERVER_PORT = 7860
 POLL_SECONDS = float(os.getenv("INGEST_POLL_SECONDS", "3"))
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("INGEST_TIMEOUT_SECONDS", "60"))
 
@@ -353,7 +355,7 @@ def build_app() -> gr.Blocks:
 if __name__ == "__main__":
     root_path = os.getenv("GRADIO_ROOT_PATH") or None
     build_app().launch(
-        server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
-        server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+        server_name=GRADIO_SERVER_NAME,
+        server_port=GRADIO_SERVER_PORT,
         root_path=root_path,
     )

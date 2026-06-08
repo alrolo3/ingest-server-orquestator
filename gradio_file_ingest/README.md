@@ -27,8 +27,6 @@ Optional environment variables for embedded and standalone runs:
 - `INGEST_API_URL`: backend base URL.
 - `INGEST_POLL_SECONDS`: polling interval for the jobs dashboard.
 - `INGEST_TIMEOUT_SECONDS`: request timeout per file.
-- `GRADIO_SERVER_NAME`: Gradio bind host.
-- `GRADIO_SERVER_PORT`: Gradio port.
 - `GRADIO_ROOT_PATH`: root path when serving behind a reverse proxy.
 
 Files are posted as multipart form data with field name `file` and form value `source=gradio`.
