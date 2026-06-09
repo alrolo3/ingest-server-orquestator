@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +15,7 @@ from processing.parsers.mineru_ocr_model import (
     MinerU,
     MinerUOcrOptions,
     _ensure_max_position_embeddings,
+    _repair_missing_lm_head,
 )
 
 
@@ -128,6 +130,57 @@ class MinerUOcrModelTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "max_position_embeddings"):
             _ensure_max_position_embeddings(model)
+
+    def test_repair_missing_lm_head_ties_embeddings_when_checkpoint_head_is_absent(self) -> None:
+        input_weight = SimpleNamespace(shape=(10, 4))
+        output_weight = SimpleNamespace(shape=(10, 4))
+        input_embeddings = SimpleNamespace(weight=input_weight)
+        output_embeddings = SimpleNamespace(weight=output_weight)
+        config = SimpleNamespace(tie_word_embeddings=False)
+        model = SimpleNamespace(
+            config=config,
+            get_input_embeddings=lambda: input_embeddings,
+            get_output_embeddings=lambda: output_embeddings,
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir)
+            (model_path / "model.safetensors.index.json").write_text(
+                (
+                    '{"weight_map": {'
+                    '"model.language_model.embed_tokens.weight": "model.safetensors"'
+                    "}}"
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertLogs("processing.parsers.mineru_ocr_model", level="WARNING"):
+                _repair_missing_lm_head(model, model_path)
+
+        self.assertIs(input_weight, output_embeddings.weight)
+        self.assertTrue(config.tie_word_embeddings)
+
+    def test_repair_missing_lm_head_keeps_checkpoint_head_when_present(self) -> None:
+        input_weight = SimpleNamespace(shape=(10, 4))
+        output_weight = SimpleNamespace(shape=(10, 4))
+        input_embeddings = SimpleNamespace(weight=input_weight)
+        output_embeddings = SimpleNamespace(weight=output_weight)
+        model = SimpleNamespace(
+            config=SimpleNamespace(tie_word_embeddings=False),
+            get_input_embeddings=lambda: input_embeddings,
+            get_output_embeddings=lambda: output_embeddings,
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            model_path = Path(temp_dir)
+            (model_path / "model.safetensors.index.json").write_text(
+                '{"weight_map": {"lm_head.weight": "model.safetensors"}}',
+                encoding="utf-8",
+            )
+
+            _repair_missing_lm_head(model, model_path)
+
+        self.assertIs(output_weight, output_embeddings.weight)
 
 
 if __name__ == "__main__":

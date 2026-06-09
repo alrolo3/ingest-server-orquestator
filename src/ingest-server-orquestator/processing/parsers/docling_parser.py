@@ -200,8 +200,8 @@ class DoclingParser(AbstractParser):
             # ---------------------------------------------------------------------
             do_table_structure=True,
             do_ocr=config_server.docling_ocr_enabled,
-            do_code_enrichment=True,
-            do_formula_enrichment=False,
+            do_code_enrichment=config_server.docling_code_enrichment_enabled,
+            do_formula_enrichment=config_server.docling_formula_enrichment_enabled,
             # Use backend-native PDF text instead of layout model text detection
             force_backend_text=False,
 

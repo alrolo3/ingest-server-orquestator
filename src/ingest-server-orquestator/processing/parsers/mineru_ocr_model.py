@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -18,6 +19,7 @@ from pydantic import Field
 
 
 LOGGER = logging.getLogger(__name__)
+_LM_HEAD_WEIGHT = "lm_head.weight"
 _TEXT_BLOCK_TYPES = {
     "text",
     "title",
@@ -94,6 +96,7 @@ class MinerU(BaseOcrModel):
             device_map=self._device_map(),
         )
         _ensure_max_position_embeddings(model)
+        _repair_missing_lm_head(model, model_path)
         processor = AutoProcessor.from_pretrained(str(model_path), use_fast=True)
         self.client = MinerUClient(
             backend="transformers",
@@ -231,6 +234,88 @@ def _ensure_max_position_embeddings(model: Any) -> None:
         "Patched MinerU OCR model config max_position_embeddings=%s",
         max_position_embeddings,
     )
+
+
+def _repair_missing_lm_head(model: Any, model_path: Path) -> None:
+    checkpoint_has_lm_head = _checkpoint_contains_tensor(model_path, _LM_HEAD_WEIGHT)
+    if checkpoint_has_lm_head is not False:
+        return
+
+    input_embeddings = model.get_input_embeddings()
+    output_embeddings = model.get_output_embeddings()
+    input_weight = getattr(input_embeddings, "weight", None)
+    output_weight = getattr(output_embeddings, "weight", None)
+    if input_weight is None or output_weight is None:
+        raise ValueError(
+            "MinerU OCR model checkpoint is missing lm_head.weight, and model "
+            "embeddings cannot be tied."
+        )
+
+    input_shape = getattr(input_weight, "shape", None)
+    output_shape = getattr(output_weight, "shape", None)
+    if input_shape != output_shape:
+        raise ValueError(
+            "MinerU OCR model checkpoint is missing lm_head.weight, but input "
+            f"and output embedding shapes differ: {input_shape} != {output_shape}."
+        )
+
+    output_embeddings.weight = input_weight
+    config = getattr(model, "config", None)
+    if config is not None:
+        setattr(config, "tie_word_embeddings", True)
+
+    LOGGER.warning(
+        "MinerU OCR checkpoint is missing lm_head.weight; tied output embeddings "
+        "to input embeddings to avoid random generation."
+    )
+
+
+def _checkpoint_contains_tensor(model_path: Path, tensor_name: str) -> bool | None:
+    for index_name in (
+        "model.safetensors.index.json",
+        "pytorch_model.bin.index.json",
+    ):
+        index_path = model_path / index_name
+        if not index_path.is_file():
+            continue
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            LOGGER.warning(
+                "Could not inspect MinerU checkpoint index %s: %s",
+                index_path,
+                exc,
+            )
+            return None
+
+        weight_map = data.get("weight_map")
+        if not isinstance(weight_map, Mapping):
+            LOGGER.warning("MinerU checkpoint index has no weight_map: %s", index_path)
+            return None
+        return tensor_name in weight_map
+
+    safetensors_path = model_path / "model.safetensors"
+    if safetensors_path.is_file():
+        try:
+            from safetensors import safe_open
+        except ImportError:
+            LOGGER.warning(
+                "Could not inspect MinerU checkpoint tensors because safetensors "
+                "is not installed."
+            )
+            return None
+        try:
+            with safe_open(safetensors_path, framework="pt", device="cpu") as tensors:
+                return tensor_name in tensors.keys()
+        except (OSError, ValueError) as exc:
+            LOGGER.warning(
+                "Could not inspect MinerU checkpoint %s: %s",
+                safetensors_path,
+                exc,
+            )
+            return None
+
+    return None
 
 
 def _valid_bbox(value: Any) -> bool:

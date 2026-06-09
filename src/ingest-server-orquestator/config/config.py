@@ -41,6 +41,8 @@ _DOCLING_OCR_BATCH_SIZE = 8
 _DOCLING_LAYOUT_BATCH_SIZE = 4
 _DOCLING_TABLE_BATCH_SIZE = 8
 _DOCLING_QUEUE_MAX_SIZE = 16
+_DOCLING_CODE_ENRICHMENT_ENABLED = False
+_DOCLING_FORMULA_ENRICHMENT_ENABLED = False
 _FALSE_VALUES = {"", "0", "false", "no", "off"}
 
 
@@ -80,6 +82,8 @@ class ServerConfig:
     docling_layout_batch_size: int = _DOCLING_LAYOUT_BATCH_SIZE
     docling_table_batch_size: int = _DOCLING_TABLE_BATCH_SIZE
     docling_queue_max_size: int = _DOCLING_QUEUE_MAX_SIZE
+    docling_code_enrichment_enabled: bool = _DOCLING_CODE_ENRICHMENT_ENABLED
+    docling_formula_enrichment_enabled: bool = _DOCLING_FORMULA_ENRICHMENT_ENABLED
     elastic_hosts: list[str] = field(default_factory=_default_elastic_hosts)
     elastic_api_key: str | None = _DEFAULT_ELASTIC_API_KEY
     elastic_index_name: str = "open-rag-embeddings-v3"
@@ -220,6 +224,14 @@ def _load_server_config_from_env() -> ServerConfig:
         docling_queue_max_size=max(
             1,
             _env_int("DOCLING_QUEUE_MAX_SIZE", _DOCLING_QUEUE_MAX_SIZE),
+        ),
+        docling_code_enrichment_enabled=_env_bool(
+            "DOCLING_CODE_ENRICHMENT_ENABLED",
+            _DOCLING_CODE_ENRICHMENT_ENABLED,
+        ),
+        docling_formula_enrichment_enabled=_env_bool(
+            "DOCLING_FORMULA_ENRICHMENT_ENABLED",
+            _DOCLING_FORMULA_ENRICHMENT_ENABLED,
         ),
         elastic_hosts=_env_list("ELASTIC_HOSTS", elastic_hosts_default),
         elastic_api_key=_env_optional_string(

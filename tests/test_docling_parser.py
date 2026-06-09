@@ -97,6 +97,8 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual(4, pipeline_options.layout_batch_size)
         self.assertEqual(8, pipeline_options.table_batch_size)
         self.assertEqual(16, pipeline_options.queue_max_size)
+        self.assertFalse(pipeline_options.do_code_enrichment)
+        self.assertFalse(pipeline_options.do_formula_enrichment)
         self.assertEqual(4, pipeline_options.layout_options.batch_size)
         self.assertEqual("cuda:0", pipeline_options.accelerator_options.device)
         self.assertIs(

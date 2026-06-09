@@ -57,6 +57,8 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(4, settings.docling_layout_batch_size)
         self.assertEqual(8, settings.docling_table_batch_size)
         self.assertEqual(16, settings.docling_queue_max_size)
+        self.assertFalse(settings.docling_code_enrichment_enabled)
+        self.assertFalse(settings.docling_formula_enrichment_enabled)
         self.assertEqual(["https://localhost:9200"], settings.elastic_hosts)
         self.assertEqual(
             "RW9RbG1aNEJ4QVZwbFVaNjNhOEc6QTY1b1V2cDU4MUUxWHZjeTkxTkx4UQ==",
@@ -177,6 +179,8 @@ class ServerConfigTest(unittest.TestCase):
             "DOCLING_LAYOUT_BATCH_SIZE": "2",
             "DOCLING_TABLE_BATCH_SIZE": "5",
             "DOCLING_QUEUE_MAX_SIZE": "7",
+            "DOCLING_CODE_ENRICHMENT_ENABLED": "true",
+            "DOCLING_FORMULA_ENRICHMENT_ENABLED": "true",
         }
         with patch.dict(os.environ, env, clear=True):
             config_module._SERVER_CONFIG = None
@@ -214,6 +218,8 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(2, settings.docling_layout_batch_size)
         self.assertEqual(5, settings.docling_table_batch_size)
         self.assertEqual(7, settings.docling_queue_max_size)
+        self.assertTrue(settings.docling_code_enrichment_enabled)
+        self.assertTrue(settings.docling_formula_enrichment_enabled)
         self.assertEqual(
             ["https://one:9200", "https://two:9200"],
             settings.elastic_hosts,
