@@ -70,13 +70,11 @@ flowchart LR
         litellmPods --> vllmNemotron
         litellmPods --> vllmEmbedding
         litellmPods --> vllmRerank
-        litellmPods -.-> vllmBge
     end
 
     route -->|gradio.simona.local| gradioSvc
     route -->|inference.simona.local| litellmSvc
     route -->|kibana.simona.local| kbSvc
-    route -.-> openwebui[openwebui-service:8080<br/>not present]
 
     subgraph storage[Local persistent storage]
         ingestPvc[ingest-data-pvc<br/>1Ti RWO]
