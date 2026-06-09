@@ -70,13 +70,13 @@ flowchart LR
         litellmPods --> vllmNemotron
         litellmPods --> vllmEmbedding
         litellmPods --> vllmRerank
-        litellmPods -. configured, no endpoints .-> vllmBge
+        litellmPods -.-> vllmBge
     end
 
     route -->|gradio.simona.local| gradioSvc
     route -->|inference.simona.local| litellmSvc
     route -->|kibana.simona.local| kbSvc
-    route -. openwebui.simona.local, backend missing .-> openwebui[openwebui-service:8080<br/>not present]
+    route -.-> openwebui[openwebui-service:8080<br/>not present]
 
     subgraph storage[Local persistent storage]
         ingestPvc[ingest-data-pvc<br/>1Ti RWO]
@@ -317,4 +317,3 @@ PersistentVolume reclaim policies observed:
 - `kubectl get networkpolicy -A` returned no live NetworkPolicy resources. The checked-in `k8s/ingest-server.yaml` contains a Gradio-to-ingest NetworkPolicy, but it is not currently applied.
 - The live `ingest-server-config` differs from older checked-in manifest defaults. The live cluster points ingest traffic to ECK Elasticsearch and LiteLLM service DNS names.
 - Internal ECK HTTP services use TLS. The Traefik `kibana-eck-transport` currently sets `insecureSkipVerify: true` for the Kibana upstream certificate.
-

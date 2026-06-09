@@ -24,38 +24,38 @@ This document describes the full runtime path from a user uploading a file in Gr
 ```mermaid
 sequenceDiagram
     actor User
-    participant Traefik as Traefik<br/>gradio.simona.local
-    participant Gradio as ingest-gradio<br/>Gradio UI
-    participant API as ingest-server<br/>FastAPI
-    participant PVC as ingest-data-pvc<br/>/uploads and /outputs
-    participant Queue as LocalQueue<br/>metrics store
-    participant Worker as InboundWorker<br/>spawned job_runner
-    participant Docling as Docling parser<br/>OCR/layout/table/image
-    participant LiteLLM as inference-service<br/>LiteLLM
+    participant Traefik as Traefik gradio.simona.local
+    participant Gradio as ingest-gradio Gradio UI
+    participant API as ingest-server FastAPI
+    participant PVC as ingest-data-pvc uploads outputs
+    participant Queue as LocalQueue metrics store
+    participant Worker as InboundWorker spawned job_runner
+    participant Docling as Docling parser OCR layout table image
+    participant LiteLLM as inference-service LiteLLM
     participant VLLMChat as vLLM Qwen3.5/Nemotron
     participant Chunker as Docling HybridChunker
-    participant ES as Elasticsearch<br/>open-rag-embeddings-v3
+    participant ES as Elasticsearch open-rag-embeddings-v3
     participant VLLMEmb as vLLM Qwen3-Embedding-4B
 
     User->>Traefik: Upload file in browser
     Traefik->>Gradio: Route to Service ingest-gradio:7860
-    Gradio->>API: POST /api/v1/ingest/file<br/>multipart file + source=gradio
-    API->>PVC: Save /uploads/&lt;uuid&gt;-&lt;filename&gt;
+    Gradio->>API: POST /api/v1/ingest/file multipart file source=gradio
+    API->>PVC: Save uploaded file under /uploads with UUID prefix
     API->>Queue: Create Job and metrics record
     API-->>Gradio: Return job_id and status URL
     Gradio->>API: Poll /api/v1/ingest/jobs
 
     Queue->>Worker: Dequeue job
     Worker->>Docling: Parse PDF with configured OCR and local artifacts
-    Docling->>LiteLLM: Picture descriptions<br/>/v1/chat/completions
+    Docling->>LiteLLM: Picture descriptions /v1/chat/completions
     LiteLLM->>VLLMChat: Route to configured chat model
     Docling-->>Worker: ParsedDocument
     Worker->>Chunker: Create token chunks with page provenance
     Worker->>ES: Bulk index chunks with ingest pipeline
-    ES->>LiteLLM: Embedding inference<br/>/v1/embeddings
+    ES->>LiteLLM: Embedding inference /v1/embeddings
     LiteLLM->>VLLMEmb: Qwen3-Embedding-4B
     ES-->>Worker: Bulk response
-    Worker->>PVC: Write /outputs/red-team-&lt;job_id&gt;-&lt;pid&gt;.md
+    Worker->>PVC: Write markdown output under /outputs
     Worker->>Queue: Mark metrics done or failed
 ```
 
