@@ -29,6 +29,10 @@ logging.basicConfig(
 LOGGER = logging.getLogger("ingest-server-orquestator.job-runner")
 
 
+def _serializable_job_error(exc: Exception) -> RuntimeError:
+    return RuntimeError(f"{type(exc).__name__}: {exc}")
+
+
 def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
     settings = get_server_config()
     metrics = metrics_store or JobMetricsStore()
@@ -81,9 +85,10 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         progress.mark_done("Job done: chunks sent to Elasticsearch.")
         LOGGER.info("Finished job job_id=%s", job.job_id)
     except Exception as exc:
-        progress.mark_failed(str(exc), stage=current_stage)
+        serializable_error = _serializable_job_error(exc)
+        progress.mark_failed(str(serializable_error), stage=current_stage)
         LOGGER.exception("Job failed job_id=%s stage=%s", job.job_id, current_stage)
-        raise
+        raise serializable_error from None
 
     try:
         markdown = parsed_document.get_markdown()

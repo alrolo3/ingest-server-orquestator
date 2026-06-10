@@ -5,7 +5,7 @@ from pathlib import Path
 SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestator"
 sys.path.insert(0, str(SRC_DIR))
 
-from dispatcher.elastic.elastic import ElasticsearchDispatch
+from dispatcher.elastic.elastic import ElasticsearchDispatch, OPEN_RAG_PIPELINE
 
 
 class FakeIndices:
@@ -26,6 +26,24 @@ class FakeClient:
 
 
 class ElasticsearchDispatchTest(unittest.TestCase):
+    def test_pipeline_title_normalization_avoids_char_overloads(self) -> None:
+        script_sources = [
+            processor["script"]["source"]
+            for processor in OPEN_RAG_PIPELINE["processors"]
+            if "script" in processor
+        ]
+        normalization_source = next(
+            source for source in script_sources if "String cleanTitle" in source
+        )
+
+        self.assertNotIn("char c =", normalization_source)
+        self.assertNotIn("charAt(", normalization_source)
+        self.assertNotIn("Math.max(", normalization_source)
+        self.assertNotIn("lastIndexOf('/')", normalization_source)
+        self.assertNotIn("lastIndexOf('\\\\')", normalization_source)
+        self.assertIn('lastIndexOf("/")', normalization_source)
+        self.assertIn('lastIndexOf("\\\\")', normalization_source)
+
     def test_ensure_index_mappings_adds_title_semantic_when_missing(self) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
             index_name="rag-index",
