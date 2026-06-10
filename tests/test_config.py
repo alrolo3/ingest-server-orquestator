@@ -51,6 +51,12 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("auto", settings.docling_mineru_dtype)
         self.assertEqual(1, settings.docling_mineru_batch_size)
         self.assertFalse(settings.docling_mineru_image_analysis)
+        self.assertEqual(2.0, settings.docling_surya_scale)
+        self.assertEqual(1.0, settings.docling_surya_confidence)
+        self.assertIsNone(settings.docling_surya_inference_url)
+        self.assertIsNone(settings.docling_surya_inference_backend)
+        self.assertEqual(8, settings.docling_surya_inference_parallel)
+        self.assertTrue(settings.docling_surya_keep_alive)
         self.assertFalse(settings.docling_force_full_page_ocr)
         self.assertEqual(0.05, settings.docling_ocr_bitmap_area_threshold)
         self.assertEqual(8, settings.docling_ocr_batch_size)
@@ -172,6 +178,12 @@ class ServerConfigTest(unittest.TestCase):
             "DOCLING_MINERU_DTYPE": "bfloat16",
             "DOCLING_MINERU_BATCH_SIZE": "2",
             "DOCLING_MINERU_IMAGE_ANALYSIS": "true",
+            "DOCLING_SURYA_SCALE": "3.0",
+            "DOCLING_SURYA_CONFIDENCE": "0.75",
+            "DOCLING_SURYA_INFERENCE_URL": "http://surya:8000/v1",
+            "DOCLING_SURYA_INFERENCE_BACKEND": "vllm",
+            "DOCLING_SURYA_INFERENCE_PARALLEL": "0",
+            "DOCLING_SURYA_KEEP_ALIVE": "false",
             "DOCLING_FORCE_FULL_PAGE_OCR": "true",
             "DOCLING_OCR_BITMAP_AREA_THRESHOLD": "0.1",
             "INGEST_WORKER_MAX_WORKERS": "0",
@@ -212,6 +224,15 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("bfloat16", settings.docling_mineru_dtype)
         self.assertEqual(2, settings.docling_mineru_batch_size)
         self.assertTrue(settings.docling_mineru_image_analysis)
+        self.assertEqual(3.0, settings.docling_surya_scale)
+        self.assertEqual(0.75, settings.docling_surya_confidence)
+        self.assertEqual(
+            "http://surya:8000/v1",
+            settings.docling_surya_inference_url,
+        )
+        self.assertEqual("vllm", settings.docling_surya_inference_backend)
+        self.assertEqual(1, settings.docling_surya_inference_parallel)
+        self.assertFalse(settings.docling_surya_keep_alive)
         self.assertTrue(settings.docling_force_full_page_ocr)
         self.assertEqual(0.1, settings.docling_ocr_bitmap_area_threshold)
         self.assertEqual(3, settings.docling_ocr_batch_size)

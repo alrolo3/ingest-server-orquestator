@@ -33,6 +33,12 @@ _DOCLING_MINERU_DEVICE = "auto"
 _DOCLING_MINERU_DTYPE = "auto"
 _DOCLING_MINERU_BATCH_SIZE = 1
 _DOCLING_MINERU_IMAGE_ANALYSIS = False
+_DOCLING_SURYA_SCALE = 2.0
+_DOCLING_SURYA_CONFIDENCE = 1.0
+_DOCLING_SURYA_INFERENCE_URL: str | None = None
+_DOCLING_SURYA_INFERENCE_BACKEND: str | None = None
+_DOCLING_SURYA_INFERENCE_PARALLEL = 8
+_DOCLING_SURYA_KEEP_ALIVE = True
 _DOCLING_RAPID_OCR_LANGS = ["english"]
 _DOCLING_AUTO_OCR_LANGS: list[str] = []
 _DOCLING_FORCE_FULL_PAGE_OCR = False
@@ -76,6 +82,12 @@ class ServerConfig:
     docling_mineru_dtype: str = _DOCLING_MINERU_DTYPE
     docling_mineru_batch_size: int = _DOCLING_MINERU_BATCH_SIZE
     docling_mineru_image_analysis: bool = _DOCLING_MINERU_IMAGE_ANALYSIS
+    docling_surya_scale: float = _DOCLING_SURYA_SCALE
+    docling_surya_confidence: float = _DOCLING_SURYA_CONFIDENCE
+    docling_surya_inference_url: str | None = _DOCLING_SURYA_INFERENCE_URL
+    docling_surya_inference_backend: str | None = _DOCLING_SURYA_INFERENCE_BACKEND
+    docling_surya_inference_parallel: int = _DOCLING_SURYA_INFERENCE_PARALLEL
+    docling_surya_keep_alive: bool = _DOCLING_SURYA_KEEP_ALIVE
     docling_force_full_page_ocr: bool = _DOCLING_FORCE_FULL_PAGE_OCR
     docling_ocr_bitmap_area_threshold: float = _DOCLING_OCR_BITMAP_AREA_THRESHOLD
     docling_ocr_batch_size: int = _DOCLING_OCR_BATCH_SIZE
@@ -200,6 +212,33 @@ def _load_server_config_from_env() -> ServerConfig:
         docling_mineru_image_analysis=_env_bool(
             "DOCLING_MINERU_IMAGE_ANALYSIS",
             _DOCLING_MINERU_IMAGE_ANALYSIS,
+        ),
+        docling_surya_scale=_env_float(
+            "DOCLING_SURYA_SCALE",
+            _DOCLING_SURYA_SCALE,
+        ),
+        docling_surya_confidence=_env_float(
+            "DOCLING_SURYA_CONFIDENCE",
+            _DOCLING_SURYA_CONFIDENCE,
+        ),
+        docling_surya_inference_url=_env_optional_string(
+            "DOCLING_SURYA_INFERENCE_URL",
+            _DOCLING_SURYA_INFERENCE_URL,
+        ),
+        docling_surya_inference_backend=_env_optional_string(
+            "DOCLING_SURYA_INFERENCE_BACKEND",
+            _DOCLING_SURYA_INFERENCE_BACKEND,
+        ),
+        docling_surya_inference_parallel=max(
+            1,
+            _env_int(
+                "DOCLING_SURYA_INFERENCE_PARALLEL",
+                _DOCLING_SURYA_INFERENCE_PARALLEL,
+            ),
+        ),
+        docling_surya_keep_alive=_env_bool(
+            "DOCLING_SURYA_KEEP_ALIVE",
+            _DOCLING_SURYA_KEEP_ALIVE,
         ),
         docling_force_full_page_ocr=_env_bool(
             "DOCLING_FORCE_FULL_PAGE_OCR",

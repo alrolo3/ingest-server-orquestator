@@ -10,11 +10,15 @@ All notable changes to this project should be documented in this file.
   bitmap area threshold, and OCR batch size.
 - Added configurable ingest worker concurrency and Docling layout/table queue
   batch sizes for GPU memory control.
+- Added deployment config for enabling Docling code enrichment with
+  `DOCLING_CODE_ENRICHMENT_ENABLED`.
 - Added the EasyOCR runtime dependency required by the default OCR engine.
 - Added a configurable MinerU OCR backend for Docling, selected with
   `DOCLING_OCR_ENGINE=mineru`.
 - Added the MinerU utility runtime dependency without changing the pinned
   Transformers version.
+- Added a configurable Surya OCR 2 backend for Docling, selected with
+  `DOCLING_OCR_ENGINE=surya`.
 
 ### Changed
 

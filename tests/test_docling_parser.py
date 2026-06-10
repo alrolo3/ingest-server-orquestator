@@ -21,6 +21,7 @@ from processing.parsers.docling_parser import (
 )
 from processing.parsers.docling_progress import ProgressReportingStandardPdfPipeline
 from processing.parsers.mineru_ocr_model import MinerUOcrOptions
+from processing.parsers.surya_ocr_model import SuryaOcrOptions
 from queues.domain.job import Job
 
 
@@ -137,6 +138,52 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual("bfloat16", options.dtype)
         self.assertEqual(2, options.batch_size)
         self.assertTrue(options.image_analysis)
+
+    def test_docling_ocr_options_supports_surya(self) -> None:
+        options = _docling_ocr_options(
+            ServerConfig(
+                app_name="test",
+                environment="test",
+                inbound_queue_name="inbound",
+                worker_max_workers=1,
+                chunk_max_tokens=2048,
+                tokenizer_path=Path("/tmp/tokenizer"),
+                docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+                docling_ocr_engine="surya",
+                docling_surya_scale=3.0,
+                docling_surya_confidence=0.75,
+                docling_surya_inference_url="http://surya:8000/v1",
+                docling_surya_inference_backend="vllm",
+                docling_surya_inference_parallel=4,
+                docling_surya_keep_alive=False,
+            )
+        )
+
+        self.assertIsInstance(options, SuryaOcrOptions)
+        self.assertEqual(["es", "en"], options.lang)
+        self.assertEqual(3.0, options.scale)
+        self.assertEqual(0.75, options.confidence)
+        self.assertEqual("http://surya:8000/v1", options.inference_url)
+        self.assertEqual("vllm", options.inference_backend)
+        self.assertEqual(4, options.inference_parallel)
+        self.assertFalse(options.keep_alive)
+
+    def test_docling_ocr_options_error_mentions_surya(self) -> None:
+        with self.assertRaisesRegex(ValueError, "surya"):
+            _docling_ocr_options(
+                ServerConfig(
+                    app_name="test",
+                    environment="test",
+                    inbound_queue_name="inbound",
+                    worker_max_workers=1,
+                    chunk_max_tokens=2048,
+                    tokenizer_path=Path("/tmp/tokenizer"),
+                    docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                    docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+                    docling_ocr_engine="unknown",
+                )
+            )
 
 
 if __name__ == "__main__":

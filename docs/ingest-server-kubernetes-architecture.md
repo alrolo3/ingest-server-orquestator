@@ -173,6 +173,8 @@ Live ConfigMap values include:
 | `NVIDIA_VISIBLE_DEVICES` | `4` |
 | `DOCLING_OCR_ENGINE` | `mineru` |
 | `DOCLING_OCR_LANGS` | `es,en` |
+| `DOCLING_CODE_ENRICHMENT_ENABLED` | `false` |
+| `DOCLING_SURYA_INFERENCE_URL` | Empty unless `DOCLING_OCR_ENGINE=surya` points to a Surya vLLM/llama.cpp `/v1` endpoint |
 | `DOCLING_PICTURE_DESCRIPTION_URL` | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
 | `ELASTIC_HOSTS` / `ELASTIC_URL` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
 | `ELASTIC_INDEX_NAME` | `open-rag-embeddings-v3` |

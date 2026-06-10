@@ -144,6 +144,7 @@ Docling parser settings come from `ingest-server-config`.
 | Table batch size | `8` |
 | Queue max size | `16` |
 | Full page OCR | `false` |
+| Code enrichment | `false` |
 | Picture description URL | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
 
 The Docling parser:
@@ -151,6 +152,9 @@ The Docling parser:
 - Allows PDF input.
 - Uses local artifacts from `/docling-models`.
 - Uses PPDocLayout model path from the mounted model volume.
+- Can select EasyOCR, MinerU, Surya OCR 2, RapidOCR, or Docling auto OCR through
+  `DOCLING_OCR_ENGINE`.
+- Can enable Docling code enrichment with `DOCLING_CODE_ENRICHMENT_ENABLED=true`.
 - Enables table structure extraction with accurate TableFormer mode.
 - Enables picture classification and picture description.
 - Sends picture descriptions to LiteLLM with model `Qwen3.5-9B`.

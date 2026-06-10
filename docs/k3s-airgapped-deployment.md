@@ -217,12 +217,19 @@ DOCLING_MINERU_DEVICE=auto
 DOCLING_MINERU_DTYPE=auto
 DOCLING_MINERU_BATCH_SIZE=1
 DOCLING_MINERU_IMAGE_ANALYSIS=false
+DOCLING_SURYA_SCALE=2.0
+DOCLING_SURYA_CONFIDENCE=1.0
+DOCLING_SURYA_INFERENCE_URL=
+DOCLING_SURYA_INFERENCE_BACKEND=
+DOCLING_SURYA_INFERENCE_PARALLEL=8
+DOCLING_SURYA_KEEP_ALIVE=true
 DOCLING_FORCE_FULL_PAGE_OCR=false
 DOCLING_OCR_BITMAP_AREA_THRESHOLD=0.05
 DOCLING_OCR_BATCH_SIZE=8
 DOCLING_LAYOUT_BATCH_SIZE=4
 DOCLING_TABLE_BATCH_SIZE=8
 DOCLING_QUEUE_MAX_SIZE=16
+DOCLING_CODE_ENRICHMENT_ENABLED=false
 ```
 
 This expects EasyOCR artifacts under `/docling-models/artifacts/EasyOcr`.
@@ -232,11 +239,21 @@ and VLM stages.
 under `/docling-models/models/MinerU2.5-Pro-2605-1.2B`. The MinerU adapter uses
 the pinned Transformers dependency from this project; do not install
 `mineru-vl-utils[transformers]`, because that extra requires a different
-Transformers major version. `DOCLING_OCR_ENGINE=rapidocr` is also available for
-RapidOCR, but in this Docling version RapidOCR language support is limited to
-`english` and `chinese`.
+Transformers major version.
+`DOCLING_OCR_ENGINE=surya` is available for Surya OCR 2. Surya 2 uses a VLM
+backend exposed through a vLLM or llama.cpp OpenAI-compatible endpoint. Set
+`DOCLING_SURYA_INFERENCE_URL` to an existing `/v1` endpoint, or leave it empty
+to let Surya auto-start its configured backend from inside the ingest container.
+The Docker image installs `surya-ocr==0.20.0` without dependency resolution
+because Surya's package metadata currently conflicts with this project's pinned
+Transformers/Hugging Face Hub stack.
+`DOCLING_OCR_ENGINE=rapidocr` is also available for RapidOCR, but in this
+Docling version RapidOCR language support is limited to `english` and
+`chinese`.
 Use `DOCLING_OCR_ENABLED=false` for digitally native PDFs when OCR adds noise or
 runtime without improving extraction.
+Set `DOCLING_CODE_ENRICHMENT_ENABLED=true` to enable Docling code enrichment
+during parsing.
 
 Docling layout and enrichment are GPU-heavy. Keep the API worker at one
 concurrent parser process unless the selected GPU has enough free memory for
@@ -253,13 +270,14 @@ single worker, lower `DOCLING_LAYOUT_BATCH_SIZE` first.
 
 ## Download Models On An Internet-Connected Machine
 
-Install the same project dependencies or at least Docling, MinerU utilities, and
-Hugging Face tools:
+Install the same project dependencies or at least Docling, MinerU utilities,
+Surya, and Hugging Face tools:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install docling mineru-vl-utils==1.0.4 huggingface_hub
+pip install --no-deps surya-ocr==0.20.0
 ```
 
 Create the target model layout:
@@ -301,6 +319,19 @@ huggingface-cli download opendatalab/MinerU2.5-Pro-2605-1.2B \
   --local-dir /datastore/models/docling/models/MinerU2.5-Pro-2605-1.2B \
   --local-dir-use-symlinks False
 ```
+
+If Surya OCR 2 will auto-start its backend locally, pre-provision the Surya
+model artifacts required by that backend. For vLLM-backed deployments, mirror
+the Hugging Face model:
+
+```bash
+huggingface-cli download datalab-to/surya-ocr-2 \
+  --local-dir /datastore/models/surya/surya-ocr-2 \
+  --local-dir-use-symlinks False
+```
+
+For llama.cpp-backed deployments, mirror Surya's GGUF repository and configure
+the backend to use those local files.
 
 Download the tokenizer folder used by the current deployment:
 

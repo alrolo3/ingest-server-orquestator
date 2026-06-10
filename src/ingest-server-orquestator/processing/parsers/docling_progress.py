@@ -14,6 +14,7 @@ from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
 from processing.parsers.mineru_ocr_model import MinerU, MinerUOcrOptions
+from processing.parsers.surya_ocr_model import SuryaOcrModel, SuryaOcrOptions
 
 
 _CURRENT_PROGRESS: ContextVar[ProgressReporter | None] = ContextVar(
@@ -57,6 +58,14 @@ class ProgressReportingStandardPdfPipeline(StandardPdfPipeline):
         options = self.pipeline_options.ocr_options
         if isinstance(options, MinerUOcrOptions):
             return MinerU(
+                options=options,
+                enabled=self.pipeline_options.do_ocr,
+                artifacts_path=art_path,
+                accelerator_options=self.pipeline_options.accelerator_options,
+            )
+
+        if isinstance(options, SuryaOcrOptions):
+            return SuryaOcrModel(
                 options=options,
                 enabled=self.pipeline_options.do_ocr,
                 artifacts_path=art_path,

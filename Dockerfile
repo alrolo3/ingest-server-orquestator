@@ -23,7 +23,8 @@ RUN apt-get update && \
 
 COPY ingest-server-orquestator/requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip && \
-    python -m pip install -r requirements.txt
+    python -m pip install -r requirements.txt && \
+    python -m pip install --no-deps surya-ocr==0.20.0
 
 COPY ingest-server-orquestator/src ./src
 COPY ingest-server-orquestator/gradio_file_ingest ./gradio_file_ingest

@@ -35,6 +35,7 @@ from processing.parsers.docling_progress import (
     docling_progress,
 )
 from processing.parsers.mineru_ocr_model import MinerUOcrOptions
+from processing.parsers.surya_ocr_model import SuryaOcrOptions
 from queues.domain.job import Job
 
 
@@ -93,7 +94,13 @@ def _rapid_ocr_langs(langs: list[str]) -> list[str]:
 
 def _docling_ocr_options(
     config_server: ServerConfig,
-) -> OcrAutoOptions | EasyOcrOptions | RapidOcrOptions | MinerUOcrOptions:
+) -> (
+    OcrAutoOptions
+    | EasyOcrOptions
+    | RapidOcrOptions
+    | MinerUOcrOptions
+    | SuryaOcrOptions
+):
     common_options = {
         "lang": config_server.docling_ocr_langs,
         "force_full_page_ocr": config_server.docling_force_full_page_ocr,
@@ -122,6 +129,17 @@ def _docling_ocr_options(
             image_analysis=config_server.docling_mineru_image_analysis,
         )
 
+    if engine == "surya":
+        return SuryaOcrOptions(
+            **common_options,
+            scale=config_server.docling_surya_scale,
+            confidence=config_server.docling_surya_confidence,
+            inference_url=config_server.docling_surya_inference_url,
+            inference_backend=config_server.docling_surya_inference_backend,
+            inference_parallel=config_server.docling_surya_inference_parallel,
+            keep_alive=config_server.docling_surya_keep_alive,
+        )
+
     if engine == "rapidocr":
         rapid_options = dict(common_options)
         rapid_options["lang"] = _rapid_ocr_langs(config_server.docling_ocr_langs)
@@ -131,7 +149,8 @@ def _docling_ocr_options(
 
     raise ValueError(
         "Unsupported DOCLING_OCR_ENGINE value: "
-        f"{config_server.docling_ocr_engine}. Use auto, easyocr, mineru, or rapidocr."
+        f"{config_server.docling_ocr_engine}. "
+        "Use auto, easyocr, mineru, surya, or rapidocr."
     )
 
 
