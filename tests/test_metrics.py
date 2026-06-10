@@ -31,8 +31,12 @@ class JobMetricsStoreTest(unittest.TestCase):
         reporter.page_processed(1)
         reporter.page_processed(2)
         reporter.chunks_created(7)
+        reporter.record_timing("parse", 2.0)
+        reporter.record_timing("chunk", 0.5)
         reporter.mark_stage(JobStage.DISPATCHING, "Dispatching.")
         reporter.chunks_dispatched(7)
+        reporter.record_timing("dispatch", 0.25)
+        reporter.record_timing("total", 3.0)
         reporter.mark_done()
 
         metrics = store.get(job.job_id)
@@ -44,6 +48,18 @@ class JobMetricsStoreTest(unittest.TestCase):
         self.assertEqual(3, metrics["total_pages"])
         self.assertEqual(7, metrics["chunks_created"])
         self.assertEqual(7, metrics["chunks_dispatched"])
+        self.assertEqual(3.0, metrics["elapsed_seconds"])
+        self.assertEqual(2.0, metrics["parse_seconds"])
+        self.assertEqual(0.5, metrics["chunk_seconds"])
+        self.assertEqual(0.25, metrics["dispatch_seconds"])
+        self.assertEqual(1.5, metrics["pages_per_second"])
+        self.assertEqual(14.0, metrics["chunks_per_second"])
+        self.assertEqual(28.0, metrics["dispatch_chunks_per_second"])
+        self.assertEqual("parse", metrics["slowest_stage"])
+        self.assertEqual(
+            {"parse": 2.0, "chunk": 0.5, "dispatch": 0.25},
+            metrics["stage_timings"],
+        )
         self.assertEqual("Job done: chunks sent to Elasticsearch.", metrics["message"])
         self.assertIsNone(metrics["error"])
         self.assertIsNotNone(metrics["finished_at"])

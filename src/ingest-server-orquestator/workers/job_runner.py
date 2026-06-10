@@ -7,6 +7,7 @@ configure_gpu_environment()
 import logging
 from os import getpid
 from os import getenv
+from time import perf_counter
 
 import torch
 
@@ -34,6 +35,7 @@ def _serializable_job_error(exc: Exception) -> RuntimeError:
 
 
 def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
+    job_started_at = perf_counter()
     settings = get_server_config()
     metrics = metrics_store or JobMetricsStore()
     metrics.ensure_job(job)
@@ -60,7 +62,9 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         current_stage = JobStage.PARSING
         progress.mark_stage(current_stage, "Parsing document.")
         LOGGER.info("Parsing job job_id=%s", job.job_id)
+        stage_started_at = perf_counter()
         parsed_document = parser.parse(job, progress)
+        progress.record_timing("parse", perf_counter() - stage_started_at)
 
         current_stage = JobStage.CHUNKING
         progress.mark_stage(current_stage, "Creating chunks.")
@@ -72,20 +76,26 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
             tokenizer_path=settings.tokenizer_path,
         )
 
+        stage_started_at = perf_counter()
         chunks = chunker.chunk(parsed_document, progress)
         progress.chunks_created(len(chunks))
+        progress.record_timing("chunk", perf_counter() - stage_started_at)
         LOGGER.info("Created chunks job_id=%s count=%s", job.job_id, len(chunks))
 
         current_stage = JobStage.DISPATCHING
         progress.mark_stage(current_stage, "Sending chunks to Elasticsearch.")
         LOGGER.info("Dispatching chunks job_id=%s count=%s", job.job_id, len(chunks))
         dispatcher = ElasticsearchDispatch(server_config=settings)
+        stage_started_at = perf_counter()
         dispatcher.dispatch_chunks(chunks)
         progress.chunks_dispatched(len(chunks))
+        progress.record_timing("dispatch", perf_counter() - stage_started_at)
+        progress.record_timing("total", perf_counter() - job_started_at)
         progress.mark_done("Job done: chunks sent to Elasticsearch.")
         LOGGER.info("Finished job job_id=%s", job.job_id)
     except Exception as exc:
         serializable_error = _serializable_job_error(exc)
+        progress.record_timing("total", perf_counter() - job_started_at)
         progress.mark_failed(str(serializable_error), stage=current_stage)
         LOGGER.exception("Job failed job_id=%s stage=%s", job.job_id, current_stage)
         raise serializable_error from None

@@ -47,9 +47,17 @@ _DOCLING_OCR_BATCH_SIZE = 8
 _DOCLING_LAYOUT_BATCH_SIZE = 4
 _DOCLING_TABLE_BATCH_SIZE = 8
 _DOCLING_QUEUE_MAX_SIZE = 16
+_DOCLING_ACCELERATOR_THREADS = 8
+_DOCLING_PICTURE_DESCRIPTION_ENABLED = True
+_DOCLING_PICTURE_CLASSIFICATION_ENABLED = True
+_DOCLING_PICTURE_DESCRIPTION_CONCURRENCY = 16
+_DOCLING_PICTURE_DESCRIPTION_TIMEOUT = 240
+_DOCLING_IMAGES_SCALE = 2.0
+_DOCLING_TABLE_MODE = "accurate"
 _DOCLING_CODE_ENRICHMENT_ENABLED = False
 _DOCLING_FORMULA_ENRICHMENT_ENABLED = False
 _FALSE_VALUES = {"", "0", "false", "no", "off"}
+_DOCLING_TABLE_MODES = {"accurate", "fast"}
 
 
 def _default_elastic_hosts() -> list[str]:
@@ -94,6 +102,15 @@ class ServerConfig:
     docling_layout_batch_size: int = _DOCLING_LAYOUT_BATCH_SIZE
     docling_table_batch_size: int = _DOCLING_TABLE_BATCH_SIZE
     docling_queue_max_size: int = _DOCLING_QUEUE_MAX_SIZE
+    docling_accelerator_threads: int = _DOCLING_ACCELERATOR_THREADS
+    docling_picture_description_enabled: bool = _DOCLING_PICTURE_DESCRIPTION_ENABLED
+    docling_picture_classification_enabled: bool = _DOCLING_PICTURE_CLASSIFICATION_ENABLED
+    docling_picture_description_concurrency: int = (
+        _DOCLING_PICTURE_DESCRIPTION_CONCURRENCY
+    )
+    docling_picture_description_timeout: int = _DOCLING_PICTURE_DESCRIPTION_TIMEOUT
+    docling_images_scale: float = _DOCLING_IMAGES_SCALE
+    docling_table_mode: str = _DOCLING_TABLE_MODE
     docling_code_enrichment_enabled: bool = _DOCLING_CODE_ENRICHMENT_ENABLED
     docling_formula_enrichment_enabled: bool = _DOCLING_FORMULA_ENRICHMENT_ENABLED
     elastic_hosts: list[str] = field(default_factory=_default_elastic_hosts)
@@ -153,6 +170,19 @@ def _env_list(name: str, default: list[str]) -> list[str]:
         return list(default)
     values = [item.strip() for item in value.split(",") if item.strip()]
     return values or list(default)
+
+
+def _env_choice(name: str, default: str, choices: set[str]) -> str:
+    value = getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if not normalized:
+        return default
+    if normalized not in choices:
+        valid = ", ".join(sorted(choices))
+        raise ValueError(f"{name} must be one of: {valid}")
+    return normalized
 
 
 def _docling_ocr_engine() -> str:
@@ -263,6 +293,41 @@ def _load_server_config_from_env() -> ServerConfig:
         docling_queue_max_size=max(
             1,
             _env_int("DOCLING_QUEUE_MAX_SIZE", _DOCLING_QUEUE_MAX_SIZE),
+        ),
+        docling_accelerator_threads=max(
+            1,
+            _env_int("DOCLING_ACCELERATOR_THREADS", _DOCLING_ACCELERATOR_THREADS),
+        ),
+        docling_picture_description_enabled=_env_bool(
+            "DOCLING_PICTURE_DESCRIPTION_ENABLED",
+            _DOCLING_PICTURE_DESCRIPTION_ENABLED,
+        ),
+        docling_picture_classification_enabled=_env_bool(
+            "DOCLING_PICTURE_CLASSIFICATION_ENABLED",
+            _DOCLING_PICTURE_CLASSIFICATION_ENABLED,
+        ),
+        docling_picture_description_concurrency=max(
+            1,
+            _env_int(
+                "DOCLING_PICTURE_DESCRIPTION_CONCURRENCY",
+                _DOCLING_PICTURE_DESCRIPTION_CONCURRENCY,
+            ),
+        ),
+        docling_picture_description_timeout=max(
+            1,
+            _env_int(
+                "DOCLING_PICTURE_DESCRIPTION_TIMEOUT",
+                _DOCLING_PICTURE_DESCRIPTION_TIMEOUT,
+            ),
+        ),
+        docling_images_scale=max(
+            0.1,
+            _env_float("DOCLING_IMAGES_SCALE", _DOCLING_IMAGES_SCALE),
+        ),
+        docling_table_mode=_env_choice(
+            "DOCLING_TABLE_MODE",
+            _DOCLING_TABLE_MODE,
+            _DOCLING_TABLE_MODES,
         ),
         docling_code_enrichment_enabled=_env_bool(
             "DOCLING_CODE_ENRICHMENT_ENABLED",

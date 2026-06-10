@@ -10,6 +10,7 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.backend_options import PdfBackendOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.chart_extraction_options import ChartExtractionModelOptions
+from docling.datamodel import settings as docling_settings
 from docling.datamodel.pipeline_options import (
     CodeFormulaVlmOptions,
     EasyOcrOptions,
@@ -164,6 +165,24 @@ def _docling_ocr_options(
     )
 
 
+def _docling_table_mode(config_server: ServerConfig) -> TableFormerMode:
+    return TableFormerMode(config_server.docling_table_mode)
+
+
+def _docling_timing_seconds(timing_item: object) -> float:
+    return sum(float(value) for value in getattr(timing_item, "times", []) or [])
+
+
+def _record_docling_timings(
+    progress: ProgressReporter,
+    timings: dict[str, object],
+) -> None:
+    for name, timing_item in timings.items():
+        seconds = _docling_timing_seconds(timing_item)
+        if seconds > 0:
+            progress.record_timing(f"docling_{name}", seconds)
+
+
 class DoclingParser(AbstractParser):
     """Parser implementation backed by Docling."""
 
@@ -180,7 +199,7 @@ class DoclingParser(AbstractParser):
         threaded_pipeline_options = ThreadedPdfPipelineOptions(
             document_timeout=None,
             accelerator_options=AcceleratorOptions(
-                num_threads=8,
+                num_threads=config_server.docling_accelerator_threads,
                 device=config_server.docling_device,
                 cuda_use_flash_attention2=False,
             ),
@@ -202,10 +221,12 @@ class DoclingParser(AbstractParser):
             # HuggingFace code is incompatible with the installed Transformers
             # generation API and fails during document enrichment.
             # ---------------------------------------------------------------------
-            do_picture_classification=True,
-            do_picture_description=True,
+            do_picture_classification=(
+                config_server.docling_picture_classification_enabled
+            ),
+            do_picture_description=config_server.docling_picture_description_enabled,
             do_chart_extraction=False,
-            images_scale=2.0,
+            images_scale=config_server.docling_images_scale,
 
             # picture_classification_options= DocumentPictureClassifierOptions(),
             code_formula_options=CodeFormulaVlmOptions.from_preset('codeformulav2'),
@@ -220,8 +241,8 @@ class DoclingParser(AbstractParser):
                     "max_tokens": 16384,
                     "skip_special_tokens": False,
                 },
-                timeout=240,
-                concurrency=16
+                timeout=config_server.docling_picture_description_timeout,
+                concurrency=config_server.docling_picture_description_concurrency,
             ),
 
             # ---------------------------------------------------------------------
@@ -239,7 +260,7 @@ class DoclingParser(AbstractParser):
             # ---------------------------------------------------------------------
             table_structure_options=TableStructureOptions(
                 do_cell_matching=True,
-                mode=TableFormerMode.ACCURATE
+                mode=_docling_table_mode(config_server),
             ),
             # ---------------------------------------------------------------------
             # OCR
@@ -290,8 +311,23 @@ class DoclingParser(AbstractParser):
 
         print("Starting conversion...")
 
+        old_profile_pipeline_timings = (
+            docling_settings.settings.debug.profile_pipeline_timings
+        )
+        docling_settings.settings.debug.profile_pipeline_timings = True
         with docling_progress(progress):
-            doc = converter.convert(source_path).document
+            try:
+                conversion_result = converter.convert(source_path)
+            finally:
+                docling_settings.settings.debug.profile_pipeline_timings = (
+                    old_profile_pipeline_timings
+                )
+
+        _record_docling_timings(
+            progress,
+            dict(getattr(conversion_result, "timings", {}) or {}),
+        )
+        doc = conversion_result.document
 
         parsed_document = ParsedDocument(
             document_id=job.job_id,

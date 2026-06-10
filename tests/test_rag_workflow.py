@@ -12,6 +12,7 @@ class RagWorkflowTest(unittest.TestCase):
 
         self.assertIn("title_semantic", workflow)
         self.assertGreaterEqual(workflow.count("title_semantic:"), 4)
+        self.assertNotIn("title_sparse", workflow)
         self.assertIn("clean_title^6", workflow)
         self.assertIn("heavily promoted title semantic branches", workflow)
 

@@ -9,7 +9,7 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestat
 sys.path.insert(0, str(SRC_DIR))
 
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import EasyOcrOptions
+from docling.datamodel.pipeline_options import EasyOcrOptions, TableFormerMode
 from docling_core.types.doc.document import DoclingDocument, TitleItem
 
 from config.config import ServerConfig
@@ -118,6 +118,16 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual(4, pipeline_options.layout_batch_size)
         self.assertEqual(8, pipeline_options.table_batch_size)
         self.assertEqual(16, pipeline_options.queue_max_size)
+        self.assertEqual(8, pipeline_options.accelerator_options.num_threads)
+        self.assertTrue(pipeline_options.do_picture_classification)
+        self.assertTrue(pipeline_options.do_picture_description)
+        self.assertEqual(2.0, pipeline_options.images_scale)
+        self.assertEqual(16, pipeline_options.picture_description_options.concurrency)
+        self.assertEqual(240, pipeline_options.picture_description_options.timeout)
+        self.assertEqual(
+            TableFormerMode.ACCURATE,
+            pipeline_options.table_structure_options.mode,
+        )
         self.assertFalse(pipeline_options.do_code_enrichment)
         self.assertFalse(pipeline_options.do_formula_enrichment)
         self.assertEqual(4, pipeline_options.layout_options.batch_size)
@@ -131,6 +141,62 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual(str(source_path), parsed_document.source_path)
         self.assertEqual("application/pdf", parsed_document.mime_type)
         self.assertEqual("fallback", parsed_document.title)
+
+    def test_parse_uses_configurable_performance_options(self) -> None:
+        doc = DoclingDocument(name="fallback")
+        converter = MagicMock()
+        converter.convert.return_value = SimpleNamespace(document=doc)
+
+        with patch(
+            "processing.parsers.docling_parser.DocumentConverter",
+            return_value=converter,
+        ) as document_converter:
+            parser = DoclingParser(
+                type="docling",
+                server_config=ServerConfig(
+                    app_name="test",
+                    environment="test",
+                    inbound_queue_name="inbound",
+                    worker_max_workers=1,
+                    chunk_max_tokens=2048,
+                    tokenizer_path=Path("/tmp/tokenizer"),
+                    docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                    docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+                    docling_accelerator_threads=3,
+                    docling_picture_description_enabled=False,
+                    docling_picture_classification_enabled=False,
+                    docling_picture_description_concurrency=2,
+                    docling_picture_description_timeout=30,
+                    docling_images_scale=1.5,
+                    docling_table_mode="fast",
+                ),
+            )
+            with TemporaryDirectory() as temp_dir:
+                source_path = Path(temp_dir) / "uploaded.pdf"
+                source_path.write_bytes(b"%PDF-1.4\n")
+                job = Job(
+                    job_id="job-1",
+                    parser_type="docling",
+                    input_data={
+                        "file_path": str(source_path),
+                        "file_name": "uploaded.pdf",
+                        "mime_type": "application/pdf",
+                    },
+                    chunker_type="docling",
+                )
+
+                parser.parse(job, NullProgressReporter())
+
+        format_options = document_converter.call_args.kwargs["format_options"]
+        pipeline_options = format_options[InputFormat.PDF].pipeline_options
+
+        self.assertEqual(3, pipeline_options.accelerator_options.num_threads)
+        self.assertFalse(pipeline_options.do_picture_classification)
+        self.assertFalse(pipeline_options.do_picture_description)
+        self.assertEqual(1.5, pipeline_options.images_scale)
+        self.assertEqual(2, pipeline_options.picture_description_options.concurrency)
+        self.assertEqual(30, pipeline_options.picture_description_options.timeout)
+        self.assertEqual(TableFormerMode.FAST, pipeline_options.table_structure_options.mode)
 
     def test_docling_ocr_options_supports_mineru(self) -> None:
         options = _docling_ocr_options(

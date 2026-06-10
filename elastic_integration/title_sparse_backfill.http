@@ -1,0 +1,40 @@
+### Add title_sparse mapping to the existing RAG index
+PUT {{ELASTIC_URL}}/{{ELASTIC_INDEX_NAME}}/_mapping
+Authorization: Basic {{ELASTIC_AUTH}}
+Content-Type: application/json
+
+{
+  "properties": {
+    "title_sparse": {
+      "type": "semantic_text",
+      "inference_id": "opensearch-multilingual-neural-sparse",
+      "chunking_settings": {
+        "strategy": "none"
+      }
+    }
+  }
+}
+
+### Backfill existing chunks through the default pipeline.
+### Deploy the updated ingest server first so the ingest pipeline populates title_sparse.
+POST {{ELASTIC_URL}}/{{ELASTIC_INDEX_NAME}}/_update_by_query?pipeline={{ELASTIC_PIPELINE_NAME}}&conflicts=proceed&refresh=true&slices=auto&wait_for_completion=false&timeout=30m
+Authorization: Basic {{ELASTIC_AUTH}}
+Content-Type: application/json
+
+{
+  "query": {
+    "bool": {
+      "filter": [
+        {
+          "term": {
+            "record_type": "chunk"
+          }
+        }
+      ]
+    }
+  }
+}
+
+### Check a background backfill task returned by update_by_query
+GET {{ELASTIC_URL}}/_tasks/{{TASK_ID}}
+Authorization: Basic {{ELASTIC_AUTH}}

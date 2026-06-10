@@ -63,6 +63,13 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(4, settings.docling_layout_batch_size)
         self.assertEqual(8, settings.docling_table_batch_size)
         self.assertEqual(16, settings.docling_queue_max_size)
+        self.assertEqual(8, settings.docling_accelerator_threads)
+        self.assertTrue(settings.docling_picture_description_enabled)
+        self.assertTrue(settings.docling_picture_classification_enabled)
+        self.assertEqual(16, settings.docling_picture_description_concurrency)
+        self.assertEqual(240, settings.docling_picture_description_timeout)
+        self.assertEqual(2.0, settings.docling_images_scale)
+        self.assertEqual("accurate", settings.docling_table_mode)
         self.assertFalse(settings.docling_code_enrichment_enabled)
         self.assertFalse(settings.docling_formula_enrichment_enabled)
         self.assertEqual(["https://localhost:9200"], settings.elastic_hosts)
@@ -191,6 +198,13 @@ class ServerConfigTest(unittest.TestCase):
             "DOCLING_LAYOUT_BATCH_SIZE": "2",
             "DOCLING_TABLE_BATCH_SIZE": "5",
             "DOCLING_QUEUE_MAX_SIZE": "7",
+            "DOCLING_ACCELERATOR_THREADS": "0",
+            "DOCLING_PICTURE_DESCRIPTION_ENABLED": "false",
+            "DOCLING_PICTURE_CLASSIFICATION_ENABLED": "false",
+            "DOCLING_PICTURE_DESCRIPTION_CONCURRENCY": "0",
+            "DOCLING_PICTURE_DESCRIPTION_TIMEOUT": "0",
+            "DOCLING_IMAGES_SCALE": "0",
+            "DOCLING_TABLE_MODE": "fast",
             "DOCLING_CODE_ENRICHMENT_ENABLED": "true",
             "DOCLING_FORMULA_ENRICHMENT_ENABLED": "true",
         }
@@ -239,6 +253,13 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(2, settings.docling_layout_batch_size)
         self.assertEqual(5, settings.docling_table_batch_size)
         self.assertEqual(7, settings.docling_queue_max_size)
+        self.assertEqual(1, settings.docling_accelerator_threads)
+        self.assertFalse(settings.docling_picture_description_enabled)
+        self.assertFalse(settings.docling_picture_classification_enabled)
+        self.assertEqual(1, settings.docling_picture_description_concurrency)
+        self.assertEqual(1, settings.docling_picture_description_timeout)
+        self.assertEqual(0.1, settings.docling_images_scale)
+        self.assertEqual("fast", settings.docling_table_mode)
         self.assertTrue(settings.docling_code_enrichment_enabled)
         self.assertTrue(settings.docling_formula_enrichment_enabled)
         self.assertEqual(
@@ -289,6 +310,23 @@ class ServerConfigTest(unittest.TestCase):
             mappings["properties"]["title_semantic"]["inference_id"],
         )
         self.assertEqual(
+            {
+                "inference_id": "opensearch-multilingual-neural-sparse",
+                "task_type": "sparse_embedding",
+            },
+            mappings["_meta"]["title_sparse_inference"],
+        )
+        self.assertEqual(
+            "opensearch-multilingual-neural-sparse",
+            mappings["properties"]["title_sparse"]["inference_id"],
+        )
+        self.assertEqual(
+            {"strategy": "none"},
+            mappings["properties"]["title_sparse"]["chunking_settings"],
+        )
+        self.assertNotIn("index_options", mappings["properties"]["title_sparse"])
+        self.assertNotIn("model_settings", mappings["properties"]["title_sparse"])
+        self.assertEqual(
             "semantic_text",
             mappings["properties"]["title_semantic"]["type"],
         )
@@ -302,6 +340,13 @@ class ServerConfigTest(unittest.TestCase):
         ]
 
         self.assertNotIn("title_semantic", remove_fields)
+
+    def test_docling_table_mode_validates_supported_values(self) -> None:
+        with patch.dict(os.environ, {"DOCLING_TABLE_MODE": "precise"}, clear=True):
+            config_module._SERVER_CONFIG = None
+
+            with self.assertRaisesRegex(ValueError, "DOCLING_TABLE_MODE"):
+                config_module.load_server_config()
 
 
 if __name__ == "__main__":

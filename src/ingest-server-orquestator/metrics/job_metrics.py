@@ -53,6 +53,15 @@ class JobMetrics:
     total_pages: int | None
     chunks_created: int
     chunks_dispatched: int
+    elapsed_seconds: float | None
+    parse_seconds: float | None
+    chunk_seconds: float | None
+    dispatch_seconds: float | None
+    pages_per_second: float | None
+    chunks_per_second: float | None
+    dispatch_chunks_per_second: float | None
+    slowest_stage: str | None
+    stage_timings: dict[str, float]
     error: str | None
     created_at: str
     started_at: str | None
@@ -88,6 +97,15 @@ class JobMetrics:
             total_pages=None,
             chunks_created=0,
             chunks_dispatched=0,
+            elapsed_seconds=None,
+            parse_seconds=None,
+            chunk_seconds=None,
+            dispatch_seconds=None,
+            pages_per_second=None,
+            chunks_per_second=None,
+            dispatch_chunks_per_second=None,
+            slowest_stage=None,
+            stage_timings={},
             error=None,
             created_at=now,
             started_at=None,

@@ -17,9 +17,30 @@ GRADIO_SERVER_PORT = 7860
 POLL_SECONDS = float(os.getenv("INGEST_POLL_SECONDS", "3"))
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("INGEST_TIMEOUT_SECONDS", "60"))
 
-ACTIVE_HEADERS = ["File", "Status", "Stage", "Pages", "Chunks", "Message", "Updated"]
-PROCESSED_HEADERS = ["File", "Status", "Pages", "Chunks", "Finished", "Message"]
-ERROR_HEADERS = ["File", "Stage", "Pages", "Error", "Finished"]
+ACTIVE_HEADERS = [
+    "File",
+    "Status",
+    "Stage",
+    "Pages",
+    "Chunks",
+    "Elapsed",
+    "Slowest",
+    "Rate",
+    "Message",
+    "Updated",
+]
+PROCESSED_HEADERS = [
+    "File",
+    "Status",
+    "Pages",
+    "Chunks",
+    "Elapsed",
+    "Slowest",
+    "Rate",
+    "Finished",
+    "Message",
+]
+ERROR_HEADERS = ["File", "Stage", "Pages", "Elapsed", "Slowest", "Error", "Finished"]
 
 
 def _target_url(base_url: str, endpoint_path: str) -> str:
@@ -126,6 +147,32 @@ def _chunks_text(job: dict[str, Any]) -> str:
     return f"{dispatched}/{created}"
 
 
+def _seconds_text(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        return f"{float(value):.1f}s"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _rate_text(job: dict[str, Any]) -> str:
+    pages_per_second = job.get("pages_per_second")
+    chunks_per_second = job.get("chunks_per_second")
+    parts = []
+    try:
+        if pages_per_second is not None:
+            parts.append(f"{float(pages_per_second):.2f} p/s")
+    except (TypeError, ValueError):
+        pass
+    try:
+        if chunks_per_second is not None:
+            parts.append(f"{float(chunks_per_second):.2f} c/s")
+    except (TypeError, ValueError):
+        pass
+    return ", ".join(parts)
+
+
 def _active_row(job: dict[str, Any]) -> list[Any]:
     return [
         job.get("file_name") or "",
@@ -133,6 +180,9 @@ def _active_row(job: dict[str, Any]) -> list[Any]:
         job.get("stage") or "",
         _pages_text(job),
         _chunks_text(job),
+        _seconds_text(job.get("elapsed_seconds")),
+        job.get("slowest_stage") or "",
+        _rate_text(job),
         job.get("message") or "",
         job.get("updated_at") or "",
     ]
@@ -144,6 +194,9 @@ def _processed_row(job: dict[str, Any]) -> list[Any]:
         job.get("status") or "",
         _pages_text(job),
         _chunks_text(job),
+        _seconds_text(job.get("elapsed_seconds")),
+        job.get("slowest_stage") or "",
+        _rate_text(job),
         job.get("finished_at") or "",
         job.get("message") or "",
     ]
@@ -154,6 +207,8 @@ def _error_row(job: dict[str, Any]) -> list[Any]:
         job.get("file_name") or "",
         job.get("stage") or "",
         _pages_text(job),
+        _seconds_text(job.get("elapsed_seconds")),
+        job.get("slowest_stage") or "",
         job.get("error") or "",
         job.get("finished_at") or "",
     ]
