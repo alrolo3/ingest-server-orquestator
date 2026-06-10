@@ -171,10 +171,10 @@ Live ConfigMap values include:
 | `APP_ENV` | `prod` |
 | `INGEST_WORKER_MAX_WORKERS` | `1` |
 | `NVIDIA_VISIBLE_DEVICES` | `4` |
-| `DOCLING_OCR_ENGINE` | `mineru` |
+| `DOCLING_OCR_ENGINE` | `surya` |
 | `DOCLING_OCR_LANGS` | `es,en` |
 | `DOCLING_CODE_ENRICHMENT_ENABLED` | `false` |
-| `DOCLING_SURYA_INFERENCE_URL` | Empty unless `DOCLING_OCR_ENGINE=surya` points to a Surya vLLM/llama.cpp `/v1` endpoint |
+| `DOCLING_SURYA_INFERENCE_URL` | `http://surya-vllm:8000/v1` |
 | `DOCLING_PICTURE_DESCRIPTION_URL` | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
 | `ELASTIC_HOSTS` / `ELASTIC_URL` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
 | `ELASTIC_INDEX_NAME` | `open-rag-embeddings-v3` |
@@ -217,9 +217,13 @@ vLLM deployments:
 | `vllm-qwen3-5-9b` | `1/1` | `Qwen3.5-9B` | `4` | Chat/completion model, max model length 32768 |
 | `vllm-qwen3-embedding-4b` | `1/1` | `Qwen3-Embedding-4B` | `4` | Embedding model, max model length 32768 |
 | `vllm-qwen3-reranker-4b` | `1/1` | `Qwen3-Reranker-4B` | `4` | Pooling runner for rerank |
+| `surya-vllm` | `1/1` | `datalab-to/surya-ocr-2` | `0` | Surya OCR 2 VLM, vLLM image `vllm/vllm-openai:v0.20.1`, service URL `http://surya-vllm:8000/v1` |
 | `vllm-bge-m3` | `0/0` | `bge-m3` | `4` | Configured in LiteLLM, but no live endpoints while scaled to zero |
 
-All active vLLM deployments use image `vllm/vllm-openai:latest`, `runtimeClassName: nvidia`, `models-llm-pvc` mounted at `/model`, `vllm-cache-pvc` at `/root/.cache/vllm`, and memory-backed `/dev/shm`.
+Active vLLM deployments use `runtimeClassName: nvidia`, `models-llm-pvc`
+mounted at `/model`, `vllm-cache-pvc` at `/root/.cache/vllm`, and
+memory-backed `/dev/shm`. Most use image `vllm/vllm-openai:latest`; Surya OCR 2
+is pinned to `vllm/vllm-openai:v0.20.1` to match Surya's default vLLM backend.
 
 ## Elastic And Kibana
 

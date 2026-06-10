@@ -168,6 +168,15 @@ class SuryaOcrModelTest(unittest.TestCase):
 
         self.assertEqual(pages, list(model(MagicMock(), pages)))
 
+    def test_enabled_model_requires_configured_inference_url(self) -> None:
+        with self.assertRaisesRegex(ValueError, "DOCLING_SURYA_INFERENCE_URL"):
+            SuryaOcrModel(
+                enabled=True,
+                artifacts_path=None,
+                options=SuryaOcrOptions(),
+                accelerator_options=MagicMock(),
+            )
+
     def test_configure_surya_environment_sets_supported_settings(self) -> None:
         options = SuryaOcrOptions(
             inference_url=" http://surya:8000/v1 ",
@@ -183,6 +192,10 @@ class SuryaOcrModelTest(unittest.TestCase):
             self.assertEqual("vllm", os.environ["SURYA_INFERENCE_BACKEND"])
             self.assertEqual("1", os.environ["SURYA_INFERENCE_PARALLEL"])
             self.assertEqual("0", os.environ["SURYA_INFERENCE_KEEP_ALIVE"])
+
+    def test_configure_surya_environment_requires_inference_url(self) -> None:
+        with self.assertRaisesRegex(ValueError, "DOCLING_SURYA_INFERENCE_URL"):
+            _configure_surya_environment(SuryaOcrOptions())
 
 
 if __name__ == "__main__":

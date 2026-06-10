@@ -15,6 +15,7 @@ The app expects these paths inside the container:
 | `/docling-models/artifacts` | Docling model artifacts | Read-only |
 | `/docling-models/models/MinerU2.5-Pro-2605-1.2B` | MinerU OCR model folder | Read-only |
 | `/docling-models/pp-doclayout-v3` | PP-DocLayoutV3 Hugging Face model folder | Read-only |
+| `/model` | Surya OCR 2 model folder in the `surya-vllm` pod | Read-only |
 
 Do not configure these paths with environment variables. Select the actual host
 folders using PV/PVC mounts and `subPath`.
@@ -30,6 +31,8 @@ For a local PV rooted at `/datastore/models`, use:
     models/
       MinerU2.5-Pro-2605-1.2B/
     pp-doclayout-v3/
+  surya/
+    surya-ocr-2/
   tokenizers/
     qwen3-embedding-4b/
 ```
@@ -93,9 +96,12 @@ sudo k3s ctr -n k8s.io images import ingest-server-orquestator_latest.tar
 sudo k3s crictl images | grep ingest-server-orquestator
 ```
 
-Apply the manifest after the image and model folders are present:
+Apply the Surya vLLM service before ingest, because the checked-in
+`ingest-server-config` uses `DOCLING_OCR_ENGINE=surya`:
 
 ```bash
+kubectl apply -f k8s/surya-vllm.yaml
+kubectl rollout status deployment/surya-vllm
 kubectl apply -f k8s/ingest-server.yaml
 kubectl rollout status deployment/ingest-server
 ```
@@ -206,12 +212,13 @@ PP-DocLayout model is loaded from `/docling-models/pp-doclayout-v3`.
 If a required model is missing, the app should fail locally instead of trying to
 download it from the internet.
 
-OCR is configured through the `ingest-server-config` ConfigMap. The default is
-offline EasyOCR with Spanish and English:
+OCR is configured through the `ingest-server-config` ConfigMap. The k3s
+manifest is configured to use Surya OCR 2 through the internal `surya-vllm`
+endpoint:
 
 ```env
 DOCLING_OCR_ENABLED=true
-DOCLING_OCR_ENGINE=easyocr
+DOCLING_OCR_ENGINE=surya
 DOCLING_OCR_LANGS=es,en
 DOCLING_MINERU_DEVICE=auto
 DOCLING_MINERU_DTYPE=auto
@@ -219,8 +226,8 @@ DOCLING_MINERU_BATCH_SIZE=1
 DOCLING_MINERU_IMAGE_ANALYSIS=false
 DOCLING_SURYA_SCALE=2.0
 DOCLING_SURYA_CONFIDENCE=1.0
-DOCLING_SURYA_INFERENCE_URL=
-DOCLING_SURYA_INFERENCE_BACKEND=
+DOCLING_SURYA_INFERENCE_URL=http://surya-vllm:8000/v1
+DOCLING_SURYA_INFERENCE_BACKEND=vllm
 DOCLING_SURYA_INFERENCE_PARALLEL=8
 DOCLING_SURYA_KEEP_ALIVE=true
 DOCLING_FORCE_FULL_PAGE_OCR=false
@@ -232,18 +239,19 @@ DOCLING_QUEUE_MAX_SIZE=16
 DOCLING_CODE_ENRICHMENT_ENABLED=false
 ```
 
-This expects EasyOCR artifacts under `/docling-models/artifacts/EasyOcr`.
-The default EasyOCR path runs OCR on CPU so GPU memory is reserved for layout
-and VLM stages.
+`DOCLING_OCR_ENGINE=easyocr` is still available and expects EasyOCR artifacts
+under `/docling-models/artifacts/EasyOcr`. The EasyOCR path runs OCR on CPU so
+GPU memory is reserved for layout and VLM stages.
 `DOCLING_OCR_ENGINE=mineru` is available for MinerU OCR and expects the model
 under `/docling-models/models/MinerU2.5-Pro-2605-1.2B`. The MinerU adapter uses
 the pinned Transformers dependency from this project; do not install
 `mineru-vl-utils[transformers]`, because that extra requires a different
 Transformers major version.
-`DOCLING_OCR_ENGINE=surya` is available for Surya OCR 2. Surya 2 uses a VLM
-backend exposed through a vLLM or llama.cpp OpenAI-compatible endpoint. Set
-`DOCLING_SURYA_INFERENCE_URL` to an existing `/v1` endpoint, or leave it empty
-to let Surya auto-start its configured backend from inside the ingest container.
+`DOCLING_OCR_ENGINE=surya` is available for Surya OCR 2. The k3s manifest
+`k8s/surya-vllm.yaml` runs Surya OCR 2 through `vllm/vllm-openai:v0.20.1` and
+exposes it as `http://surya-vllm:8000/v1`. Keep
+`DOCLING_SURYA_INFERENCE_URL` pointed at that service so the ingest pod attaches
+to vLLM instead of trying to spawn Docker inside the ingest container.
 The Docker image installs `surya-ocr==0.20.0` without dependency resolution
 because Surya's package metadata currently conflicts with this project's pinned
 Transformers/Hugging Face Hub stack.
@@ -320,15 +328,18 @@ huggingface-cli download opendatalab/MinerU2.5-Pro-2605-1.2B \
   --local-dir-use-symlinks False
 ```
 
-If Surya OCR 2 will auto-start its backend locally, pre-provision the Surya
-model artifacts required by that backend. For vLLM-backed deployments, mirror
-the Hugging Face model:
+For the Surya vLLM deployment, mirror the Hugging Face model into the folder
+mounted by `k8s/surya-vllm.yaml`:
 
 ```bash
 huggingface-cli download datalab-to/surya-ocr-2 \
   --local-dir /datastore/models/surya/surya-ocr-2 \
   --local-dir-use-symlinks False
 ```
+
+The `surya-vllm` pod mounts that folder read-only at `/model` and serves it as
+model name `datalab-to/surya-ocr-2`, which matches Surya's model-name
+validation against `/v1/models`.
 
 For llama.cpp-backed deployments, mirror Surya's GGUF repository and configure
 the backend to use those local files.

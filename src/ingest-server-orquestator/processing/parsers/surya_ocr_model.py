@@ -173,9 +173,8 @@ class SuryaOcrModel(BaseOcrModel):
 
 
 def _configure_surya_environment(options: SuryaOcrOptions) -> None:
-    inference_url = _clean_optional(options.inference_url)
-    if inference_url is not None:
-        os.environ["SURYA_INFERENCE_URL"] = inference_url
+    inference_url = _required_inference_url(options)
+    os.environ["SURYA_INFERENCE_URL"] = inference_url
 
     inference_backend = _clean_optional(options.inference_backend)
     if inference_backend is not None:
@@ -186,9 +185,8 @@ def _configure_surya_environment(options: SuryaOcrOptions) -> None:
 
 
 def _configure_surya_settings(settings_object: Any, options: SuryaOcrOptions) -> None:
-    inference_url = _clean_optional(options.inference_url)
-    if inference_url is not None:
-        setattr(settings_object, "SURYA_INFERENCE_URL", inference_url)
+    inference_url = _required_inference_url(options)
+    setattr(settings_object, "SURYA_INFERENCE_URL", inference_url)
 
     inference_backend = _clean_optional(options.inference_backend)
     if inference_backend is not None:
@@ -200,6 +198,17 @@ def _configure_surya_settings(settings_object: Any, options: SuryaOcrOptions) ->
         max(1, options.inference_parallel),
     )
     setattr(settings_object, "SURYA_INFERENCE_KEEP_ALIVE", options.keep_alive)
+
+
+def _required_inference_url(options: SuryaOcrOptions) -> str:
+    inference_url = _clean_optional(options.inference_url)
+    if inference_url is None:
+        raise ValueError(
+            "DOCLING_SURYA_INFERENCE_URL must be set when "
+            "DOCLING_OCR_ENGINE=surya. Point it at the Surya vLLM or llama.cpp "
+            "OpenAI-compatible /v1 endpoint."
+        )
+    return inference_url
 
 
 def _clean_optional(value: str | None) -> str | None:

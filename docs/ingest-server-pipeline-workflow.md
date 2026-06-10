@@ -135,10 +135,9 @@ Docling parser settings come from `ingest-server-config`.
 | --- | --- |
 | Parser | `docling` |
 | OCR enabled | `true` |
-| OCR engine | `mineru` |
+| OCR engine | `surya` |
 | OCR languages | `es,en` |
-| MinerU device/dtype | `auto` / `auto` |
-| MinerU batch size | `16` |
+| Surya inference URL | `http://surya-vllm:8000/v1` |
 | Layout batch size | `64` |
 | OCR batch size | `16` |
 | Table batch size | `8` |

@@ -19,14 +19,18 @@ All notable changes to this project should be documented in this file.
   Transformers version.
 - Added a configurable Surya OCR 2 backend for Docling, selected with
   `DOCLING_OCR_ENGINE=surya`.
+- Added a k3s Surya OCR 2 vLLM deployment and service for offline inference.
 
 ### Changed
 
-- Default OCR engine is offline EasyOCR with Spanish and English languages.
+- Application fallback OCR engine is offline EasyOCR with Spanish and English
+  languages when no deployment override is provided.
 - Default EasyOCR runs on CPU to keep VRAM available for layout and VLM stages.
 - Default ingest worker concurrency is one job at a time to avoid concurrent
   Docling GPU memory pressure.
 - Reduced default Docling layout/table/OCR batch sizes for lower peak VRAM use.
+- k3s ingest configuration now uses Surya OCR 2 through
+  `DOCLING_SURYA_INFERENCE_URL=http://surya-vllm:8000/v1`.
 
 ### Fixed
 
