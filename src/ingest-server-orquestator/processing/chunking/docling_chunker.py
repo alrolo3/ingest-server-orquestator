@@ -224,6 +224,7 @@ class DoclingChunker(AbstractChunker):
             page_numbers=page_numbers,
             total_pages=document.page_count,
             title=document.title,
+            title_semantic=document.title,
             source_file_name=document.source_file_name,
             raw_text=raw_text,
         )

@@ -187,7 +187,8 @@ Each indexed `DocumentChunk` includes:
 | `page_number` | First page in the chunk provenance |
 | `page_numbers` | All unique pages in the chunk provenance |
 | `total_pages` | Total pages in the parsed document |
-| `title` | Document title discovered by Docling |
+| `title` | Cleaned document title discovered by Docling or derived from the filename |
+| `title_semantic` | Cleaned title indexed as a semantic retrieval field |
 | `source_file_name` | Original upload filename |
 | `raw_text` | Non-contextualized chunk text |
 
@@ -208,7 +209,7 @@ The dispatcher connects to:
 | Bulk request timeout | `1800s` |
 | Certificate verification | `false` |
 
-`ElasticsearchDispatch` ensures the pipeline and index exist, then indexes chunks in bulk. Each bulk item uses:
+`ElasticsearchDispatch` upserts the managed ingest pipeline, creates the index when absent, adds the `title_semantic` mapping to existing indexes when needed, then indexes chunks in bulk. Each bulk item uses:
 
 - `_index`: `open-rag-embeddings-v3`
 - `_id`: `chunk.chunk_id`
@@ -234,12 +235,12 @@ The live ingest pipeline is `open_rag_embeddings_v3_multilingual_semantic_pipeli
 flowchart TD
     chunk[DocumentChunk bulk item]
     ts[Set ingested_at]
-    escape[Escape dollar-brace placeholders in content]
-    normalize[Normalize helper fields<br/>record_type, clean_title, searchable,<br/>boilerplate, content_kind, content_length]
+    escape[Escape dollar-brace placeholders<br/>in content and title_semantic]
+    normalize[Normalize helper fields<br/>record_type, clean_title, title_semantic,<br/>searchable, boilerplate, content_kind, content_length]
     lang[ML inference<br/>lang_ident_model_1]
     route[Route content to one lexical field<br/>content_lex.en/es/fr<br/>default en when unsupported or low confidence]
     remove[Remove temporary fields]
-    semantic[semantic_text field content<br/>inference_id openai-text_embedding-qwen3-embedding-4b]
+    semantic[semantic_text fields<br/>content and title_semantic<br/>inference_id openai-text_embedding-qwen3-embedding-4b]
     endpoint[Elastic inference endpoint<br/>LiteLLM /v1/embeddings]
     indexed[Indexed RAG chunk]
 
@@ -252,14 +253,14 @@ Pipeline processors:
 | Step | Processor | Effect |
 | --- | --- | --- |
 | 1 | `set` | Adds `ingested_at` from `_ingest.timestamp` if absent |
-| 2 | `script` | Escapes `${` in `content` to avoid custom inference template conflicts |
-| 3 | `script` | Sets `record_type=chunk`, `clean_title`, `content_length`, `searchable=true`, `boilerplate=false`, `content_kind=chunk` |
+| 2 | `script` | Escapes `${` in `content` and `title_semantic` to avoid custom inference template conflicts |
+| 3 | `script` | Sets `record_type=chunk`, cleans UUID-prefixed titles, populates `clean_title` and `title_semantic`, sets `content_length`, `searchable=true`, `boilerplate=false`, `content_kind=chunk` |
 | 4 | `inference` | Runs `lang_ident_model_1` on `content` |
 | 5 | `script` | Chooses `es`, `en`, or `fr`; defaults to `en` if unsupported or confidence is below `0.60`; copies content into `content_lex.<lang>` |
 | 6 | `remove` | Removes temporary or legacy fields |
 | failure | `set` | Writes failures to `ingest_error` |
 
-The index mapping stores `content` as a `semantic_text` field with no automatic semantic chunking because the app already pre-chunks documents. The field uses inference endpoint `openai-text_embedding-qwen3-embedding-4b`, which sends embedding requests to LiteLLM at `http://inference-service.default.svc.cluster.local:4000/v1/embeddings` with model `Qwen3-Embedding-4B`.
+The index mapping stores `content` and `title_semantic` as `semantic_text` fields with no automatic semantic chunking because the app already pre-chunks documents. Both fields use inference endpoint `openai-text_embedding-qwen3-embedding-4b`, which sends embedding requests to LiteLLM at `http://inference-service.default.svc.cluster.local:4000/v1/embeddings` with model `Qwen3-Embedding-4B`.
 
 ## Kibana Agentic Chat Retrieval
 
@@ -349,7 +350,8 @@ Retrieval branches:
 | Original lexical | `question_original` | Same multilingual lexical/title fields |
 | English lexical | `query_en` | `content_lex.en`, title/source fields |
 | Spanish lexical | `query_es` | `content_lex.es`, title/source fields |
-| Semantic | `standalone_question` | `content` semantic_text |
+| Content semantic | `standalone_question` | `content` semantic_text |
+| Title semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `title_semantic` semantic_text |
 
 The current index mapping defines `content_lex.en`, `content_lex.es`, and `content_lex.fr`. The live workflow also lists optional fields such as `content_lex.default`, additional language fields, and `headings`; those clauses are harmless but do not contribute for currently indexed chunks unless future mappings add those fields.
 

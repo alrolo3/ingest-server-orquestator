@@ -43,6 +43,26 @@ class DoclingParserTest(unittest.TestCase):
 
         self.assertEqual("fallback", _document_title(doc))
 
+    def test_document_title_cleans_uuid_prefixed_doc_name(self) -> None:
+        doc = DoclingDocument(
+            name="7b6c94b653dc44d3b5bc68c5d080189a-guia-notificacion.pdf"
+        )
+
+        self.assertEqual("guia-notificacion", _document_title(doc))
+
+    def test_document_title_uses_source_file_fallback(self) -> None:
+        doc = DoclingDocument(name="")
+
+        self.assertEqual(
+            "guia-notificacion",
+            _document_title(
+                doc,
+                source_file_name=(
+                    "7b6c94b653dc44d3b5bc68c5d080189a-guia-notificacion.pdf"
+                ),
+            ),
+        )
+
     def test_parse_disables_chart_extraction_enrichment(self) -> None:
         doc = DoclingDocument(name="fallback")
         converter = MagicMock()
@@ -110,6 +130,7 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual("uploaded.pdf", parsed_document.source_file_name)
         self.assertEqual(str(source_path), parsed_document.source_path)
         self.assertEqual("application/pdf", parsed_document.mime_type)
+        self.assertEqual("fallback", parsed_document.title)
 
     def test_docling_ocr_options_supports_mineru(self) -> None:
         options = _docling_ocr_options(

@@ -102,6 +102,7 @@ Apply the Surya vLLM service before ingest, because the checked-in
 ```bash
 kubectl apply -f k8s/surya-vllm.yaml
 kubectl rollout status deployment/surya-vllm
+kubectl apply -f k8s/litellm-config.yaml
 kubectl apply -f k8s/ingest-server.yaml
 kubectl rollout status deployment/ingest-server
 ```

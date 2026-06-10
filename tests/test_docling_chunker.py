@@ -188,6 +188,7 @@ class DoclingChunkerTest(unittest.TestCase):
         self.assertEqual([2], chunk.page_numbers)
         self.assertEqual(12, chunk.total_pages)
         self.assertEqual("Sample document", chunk.title)
+        self.assertEqual("Sample document", chunk.title_semantic)
         self.assertEqual("sample.pdf", chunk.source_file_name)
         self.assertEqual("raw body", chunk.raw_text)
         self.assertEqual("Section\nraw body", chunk.model_dump()["content"])

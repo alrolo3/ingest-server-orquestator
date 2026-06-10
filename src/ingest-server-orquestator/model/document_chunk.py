@@ -13,5 +13,6 @@ class DocumentChunk(BaseModel):
     page_numbers: list[int] = Field(default_factory=list)
     total_pages: int = 0
     title: str | None = None
+    title_semantic: str | None = None
     source_file_name: str = ""
     raw_text: str | None = None

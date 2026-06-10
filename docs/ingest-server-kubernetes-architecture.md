@@ -208,6 +208,7 @@ LiteLLM model routes:
 | `Qwen3-Embedding-4B` | `http://vllm-qwen3-embedding-4b:8000/v1` |
 | `bge-m3-pooling` | `http://vllm-bge-m3:8000` |
 | `Qwen3-Reranker-4B` | `http://vllm-qwen3-reranker-4b:8000` |
+| `datalab-to/surya-ocr-2` | `http://surya-vllm:8000/v1` |
 
 vLLM deployments:
 
@@ -274,13 +275,14 @@ The live RAG index is `open-rag-embeddings-v3`.
 | Mapping field | Purpose |
 | --- | --- |
 | `content` | `semantic_text` field with inference ID `openai-text_embedding-qwen3-embedding-4b` |
+| `title_semantic` | Cleaned title `semantic_text` field with inference ID `openai-text_embedding-qwen3-embedding-4b` |
 | `content_lex.en` | English BM25 field |
 | `content_lex.es` | Spanish BM25 field |
 | `content_lex.fr` | French BM25 field |
 | `document_id` | Upload/job document identifier |
 | `chunk_id` | Stable chunk identifier, also used as Elasticsearch `_id` |
 | `page_number`, `page_numbers` | Page metadata from Docling chunk provenance |
-| `source_file_name`, `title`, `clean_title` | Source and title metadata |
+| `source_file_name`, `title`, `clean_title` | Source and cleaned title metadata |
 | `record_type`, `searchable`, `boilerplate`, `content_kind` | Retrieval filters and helpers |
 
 Live Elastic inference endpoints relevant to this stack:

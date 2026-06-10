@@ -9,7 +9,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from config import config as config_module
 from config.gpu import configure_gpu_environment
-from dispatcher.elastic.elastic import build_open_rag_mappings
+from dispatcher.elastic.elastic import OPEN_RAG_PIPELINE, build_open_rag_mappings
 
 
 class ServerConfigTest(unittest.TestCase):
@@ -284,6 +284,24 @@ class ServerConfigTest(unittest.TestCase):
             "custom-inference",
             mappings["properties"]["content"]["inference_id"],
         )
+        self.assertEqual(
+            "custom-inference",
+            mappings["properties"]["title_semantic"]["inference_id"],
+        )
+        self.assertEqual(
+            "semantic_text",
+            mappings["properties"]["title_semantic"]["type"],
+        )
+
+    def test_elastic_pipeline_keeps_title_semantic(self) -> None:
+        remove_fields = [
+            field
+            for processor in OPEN_RAG_PIPELINE["processors"]
+            if "remove" in processor
+            for field in processor["remove"]["field"]
+        ]
+
+        self.assertNotIn("title_semantic", remove_fields)
 
 
 if __name__ == "__main__":

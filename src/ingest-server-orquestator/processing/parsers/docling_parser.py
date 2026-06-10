@@ -29,6 +29,7 @@ from config.config import ServerConfig
 from metrics.progress import ProgressReporter
 from model.base_document import DoclingOutputDocument
 from model.parsed_document import ParsedDocument
+from model.title_normalization import normalize_document_title
 from processing.base_parser import AbstractParser
 from processing.parsers.docling_progress import (
     ProgressReportingStandardPdfPipeline,
@@ -39,14 +40,23 @@ from processing.parsers.surya_ocr_model import SuryaOcrOptions
 from queues.domain.job import Job
 
 
-def _document_title(doc: DoclingDocument) -> str | None:
+def _document_title(
+    doc: DoclingDocument,
+    source_file_name: str | None = None,
+) -> str | None:
     for text_item in doc.texts:
         if text_item.label == DocItemLabel.TITLE:
-            title = text_item.text.strip()
+            title = normalize_document_title(text_item.text)
             if title:
                 return title
-    title = doc.name.strip()
-    return title if title else None
+
+    return normalize_document_title(
+        doc.name,
+        strip_extension=True,
+    ) or normalize_document_title(
+        source_file_name,
+        strip_extension=True,
+    )
 
 
 def _job_source_path(job: Job) -> Path:
@@ -288,7 +298,7 @@ class DoclingParser(AbstractParser):
             source_file_name=source_file_name,
             source_path=str(source_path),
             mime_type=mime_type,
-            title=_document_title(doc),
+            title=_document_title(doc, source_file_name=source_file_name),
             page_count=len(doc.pages),
             #markdown=doc.export_to_markdown(),
             #text=doc.export_to_text(),

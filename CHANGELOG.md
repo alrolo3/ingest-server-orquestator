@@ -20,6 +20,9 @@ All notable changes to this project should be documented in this file.
 - Added a configurable Surya OCR 2 backend for Docling, selected with
   `DOCLING_OCR_ENGINE=surya`.
 - Added a k3s Surya OCR 2 vLLM deployment and service for offline inference.
+- Added a LiteLLM model route for `datalab-to/surya-ocr-2`.
+- Added cleaned title semantic retrieval and a backfill artifact for existing
+  RAG chunks.
 
 ### Changed
 

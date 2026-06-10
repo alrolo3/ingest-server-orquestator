@@ -1,0 +1,59 @@
+### Add title_semantic mapping to the existing RAG index
+PUT {{ELASTIC_URL}}/{{ELASTIC_INDEX_NAME}}/_mapping
+Authorization: Basic {{ELASTIC_AUTH}}
+Content-Type: application/json
+
+{
+  "properties": {
+    "title_semantic": {
+      "type": "semantic_text",
+      "inference_id": "{{ELASTIC_INFERENCE_ID}}",
+      "model_settings": {
+        "service": "custom",
+        "task_type": "text_embedding",
+        "dimensions": 2560,
+        "similarity": "dot_product",
+        "element_type": "float"
+      },
+      "index_options": {
+        "dense_vector": {
+          "element_type": "float",
+          "type": "int8_hnsw",
+          "m": 16,
+          "ef_construction": 100
+        }
+      },
+      "chunking_settings": {
+        "strategy": "none"
+      }
+    }
+  }
+}
+
+### Backfill existing chunks with cleaned title/title_semantic.
+### Deploy the updated ingest server first so the ingest pipeline is upserted.
+POST {{ELASTIC_URL}}/{{ELASTIC_INDEX_NAME}}/_update_by_query?pipeline={{ELASTIC_PIPELINE_NAME}}&conflicts=proceed&refresh=true&slices=auto&wait_for_completion=false&timeout=30m
+Authorization: Basic {{ELASTIC_AUTH}}
+Content-Type: application/json
+
+{
+  "script": {
+    "lang": "painless",
+    "source": "boolean isHex(String value) { for (int i = 0; i < value.length(); i++) { char c = value.charAt(i); if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) { return false; } } return true; } String stripExtension(String value) { String lower = value.toLowerCase(); if (lower.endsWith('.pdf')) { return value.substring(0, value.length() - 4).trim(); } if (lower.endsWith('.docx') || lower.endsWith('.pptx') || lower.endsWith('.xlsx') || lower.endsWith('.html')) { return value.substring(0, value.length() - 5).trim(); } if (lower.endsWith('.doc') || lower.endsWith('.ppt') || lower.endsWith('.xls') || lower.endsWith('.txt') || lower.endsWith('.htm')) { return value.substring(0, value.length() - 4).trim(); } if (lower.endsWith('.md')) { return value.substring(0, value.length() - 3).trim(); } return value; } String cleanTitle(def raw) { if (raw == null) { return null; } String value = raw.toString().trim(); if (value.length() == 0) { return null; } int slash = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\\\')); if (slash >= 0 && slash + 1 < value.length()) { value = value.substring(slash + 1).trim(); } if (value.length() > 33 && value.charAt(32) == '-' && isHex(value.substring(0, 32))) { value = value.substring(33).trim(); } else if (value.length() > 37 && value.charAt(8) == '-' && value.charAt(13) == '-' && value.charAt(18) == '-' && value.charAt(23) == '-' && value.charAt(36) == '-') { String compact = value.substring(0, 8) + value.substring(9, 13) + value.substring(14, 18) + value.substring(19, 23) + value.substring(24, 36); if (isHex(compact)) { value = value.substring(37).trim(); } } value = stripExtension(value); return value.length() == 0 ? null : value; } String title = cleanTitle(ctx._source.title); if (title == null) { title = cleanTitle(ctx._source.clean_title); } if (title == null) { title = cleanTitle(ctx._source.source_file_name); } if (title != null) { ctx._source.title = title; ctx._source.clean_title = title; ctx._source.title_semantic = title; }"
+  },
+  "query": {
+    "bool": {
+      "filter": [
+        {
+          "term": {
+            "record_type": "chunk"
+          }
+        }
+      ]
+    }
+  }
+}
+
+### Check a background backfill task returned by update_by_query
+GET {{ELASTIC_URL}}/_tasks/{{TASK_ID}}
+Authorization: Basic {{ELASTIC_AUTH}}
