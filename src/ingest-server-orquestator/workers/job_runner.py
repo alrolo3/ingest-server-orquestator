@@ -5,9 +5,11 @@ from config.gpu import configure_gpu_environment, configure_torch_cuda_device
 configure_gpu_environment()
 
 import logging
-from os import getpid
 from os import getenv
+from pathlib import Path
+import re
 from time import perf_counter
+from typing import Any
 
 import torch
 
@@ -28,6 +30,54 @@ logging.basicConfig(
     force=True,
 )
 LOGGER = logging.getLogger("ingest-server-orquestator.job-runner")
+
+_INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+_WHITESPACE = re.compile(r"\s+")
+_MAX_OUTPUT_TITLE_LENGTH = 120
+
+
+def _sanitize_output_title(value: object) -> str:
+    title = str(value or "").strip()
+    title = _INVALID_FILENAME_CHARS.sub(" ", title)
+    title = _WHITESPACE.sub(" ", title).strip(" .")
+    if not title:
+        return "document"
+    return title[:_MAX_OUTPUT_TITLE_LENGTH].rstrip(" .") or "document"
+
+
+def _source_title(job: Job, parsed_document: Any) -> str:
+    for value in (
+        getattr(parsed_document, "title", None),
+        getattr(parsed_document, "source_file_name", None),
+        job.input_data.get("file_name"),
+        job.job_id,
+    ):
+        if not value:
+            continue
+        if value != getattr(parsed_document, "title", None):
+            stem = Path(str(value).replace("\\", "/")).stem
+            if stem:
+                return stem
+        return str(value)
+    return "document"
+
+
+def output_file_name(job: Job, parsed_document: Any) -> str:
+    title = _sanitize_output_title(_source_title(job, parsed_document))
+    return f"{title} output.md"
+
+
+def _output_url(job_id: str) -> str:
+    return f"/api/v1/ingest/jobs/{job_id}/output"
+
+
+def _write_markdown_output(job: Job, parsed_document: Any) -> Path:
+    markdown = parsed_document.get_markdown()
+    output_dir = OUTPUT_DIR / _sanitize_output_title(job.job_id)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / output_file_name(job, parsed_document)
+    path.write_text(markdown, encoding="utf-8")
+    return path
 
 
 def _serializable_job_error(exc: Exception) -> RuntimeError:
@@ -90,8 +140,18 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         dispatcher.dispatch_chunks(chunks)
         progress.chunks_dispatched(len(chunks))
         progress.record_timing("dispatch", perf_counter() - stage_started_at)
+
+        current_stage = JobStage.OUTPUTTING
+        progress.mark_stage(current_stage, "Writing markdown output.")
+        output_path = _write_markdown_output(job, parsed_document)
+        progress.set_output(
+            file_name=output_path.name,
+            path=str(output_path),
+            url=_output_url(job.job_id),
+        )
         progress.record_timing("total", perf_counter() - job_started_at)
         progress.mark_done("Job done: chunks sent to Elasticsearch.")
+        LOGGER.info("Wrote markdown output job_id=%s output_path=%s", job.job_id, output_path)
         LOGGER.info("Finished job job_id=%s", job.job_id)
     except Exception as exc:
         serializable_error = _serializable_job_error(exc)
@@ -99,12 +159,3 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         progress.mark_failed(str(serializable_error), stage=current_stage)
         LOGGER.exception("Job failed job_id=%s stage=%s", job.job_id, current_stage)
         raise serializable_error from None
-
-    try:
-        markdown = parsed_document.get_markdown()
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = OUTPUT_DIR / f"red-team-{job.job_id}-{getpid()}.md"
-        output_path.write_text(markdown, encoding="utf-8")
-        LOGGER.info("Wrote markdown output job_id=%s output_path=%s", job.job_id, output_path)
-    except Exception as exc:
-        LOGGER.exception("Failed to write markdown output job_id=%s", job.job_id)

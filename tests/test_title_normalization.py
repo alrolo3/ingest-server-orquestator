@@ -14,7 +14,7 @@ class TitleNormalizationTest(unittest.TestCase):
             "7b6c94b653dc44d3b5bc68c5d080189a-guia-notificacion-ciberincidentes"
         )
 
-        self.assertEqual("guia-notificacion-ciberincidentes", title)
+        self.assertEqual("guia notificacion ciberincidentes", title)
 
     def test_strips_canonical_uuid_prefix_and_extension(self) -> None:
         title = normalize_document_title(
@@ -36,6 +36,26 @@ class TitleNormalizationTest(unittest.TestCase):
         title = normalize_document_title("Guia de notificacion de ciberincidentes")
 
         self.assertEqual("Guia de notificacion de ciberincidentes", title)
+
+    def test_replaces_common_filename_separators_with_spaces(self) -> None:
+        cases = {
+            "guia-de-notificaciones.pdf": "guia de notificaciones",
+            "guia_notificaciones.docx": "guia notificaciones",
+            "guia.notificaciones.v2.pdf": "guia notificaciones v2",
+            "guia---notificaciones__v2.pdf": "guia notificaciones v2",
+        }
+
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(
+                    expected,
+                    normalize_document_title(value, strip_extension=True),
+                )
+
+    def test_preserves_accented_letters(self) -> None:
+        title = normalize_document_title("guía-notificación-ciberincidentes.pdf")
+
+        self.assertEqual("guía notificación ciberincidentes pdf", title)
 
 
 if __name__ == "__main__":

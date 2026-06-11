@@ -39,12 +39,15 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         self.assertNotIn("char c =", normalization_source)
         self.assertNotIn("charAt(", normalization_source)
         self.assertNotIn("Math.max(", normalization_source)
+        self.assertNotIn("replaceAll(", normalization_source)
         self.assertNotIn("lastIndexOf('/')", normalization_source)
         self.assertNotIn("lastIndexOf('\\\\')", normalization_source)
         self.assertIn('lastIndexOf("/")', normalization_source)
         self.assertIn('lastIndexOf("\\\\")', normalization_source)
 
-    def test_ensure_index_mappings_adds_title_semantic_when_missing(self) -> None:
+    def test_ensure_index_mappings_adds_sparse_semantic_fields_when_missing(
+        self,
+    ) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
             index_name="rag-index",
             inference_id="custom-inference",
@@ -66,22 +69,21 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         calls = dispatch._client.indices.put_mapping_calls
         self.assertEqual(1, len(calls))
         self.assertEqual("rag-index", calls[0]["index"])
-        title_mapping = calls[0]["properties"]["title_semantic"]
-        self.assertEqual("semantic_text", title_mapping["type"])
-        self.assertEqual("custom-inference", title_mapping["inference_id"])
-        sparse_mapping = calls[0]["properties"]["title_sparse"]
-        self.assertEqual("semantic_text", sparse_mapping["type"])
         self.assertEqual(
-            "opensearch-multilingual-neural-sparse",
-            sparse_mapping["inference_id"],
+            ["content_sparse", "clean_title", "headings"],
+            list(calls[0]["properties"]),
         )
-        self.assertEqual(
-            {"strategy": "none"},
-            sparse_mapping["chunking_settings"],
-        )
-        self.assertNotIn("index_options", sparse_mapping)
+        for mapping in calls[0]["properties"].values():
+            self.assertEqual("semantic_text", mapping["type"])
+            self.assertEqual(
+                "opensearch-multilingual-neural-sparse",
+                mapping["inference_id"],
+            )
+            self.assertEqual({"strategy": "none"}, mapping["chunking_settings"])
+            self.assertNotIn("index_options", mapping)
+            self.assertNotIn("model_settings", mapping)
 
-    def test_ensure_index_mappings_adds_title_sparse_when_title_semantic_exists(
+    def test_ensure_index_mappings_adds_only_missing_sparse_fields(
         self,
     ) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
@@ -94,7 +96,8 @@ class ElasticsearchDispatchTest(unittest.TestCase):
                     "mappings": {
                         "properties": {
                             "content": {"type": "semantic_text"},
-                            "title_semantic": {"type": "semantic_text"},
+                            "content_sparse": {"type": "semantic_text"},
+                            "clean_title": {"type": "semantic_text"},
                         }
                     }
                 }
@@ -105,9 +108,9 @@ class ElasticsearchDispatchTest(unittest.TestCase):
 
         calls = dispatch._client.indices.put_mapping_calls
         self.assertEqual(1, len(calls))
-        self.assertEqual(["title_sparse"], list(calls[0]["properties"]))
+        self.assertEqual(["headings"], list(calls[0]["properties"]))
 
-    def test_ensure_index_mappings_skips_existing_title_fields(self) -> None:
+    def test_ensure_index_mappings_skips_existing_sparse_fields(self) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
             index_name="rag-index",
             inference_id="custom-inference",
@@ -118,8 +121,9 @@ class ElasticsearchDispatchTest(unittest.TestCase):
                     "mappings": {
                         "properties": {
                             "content": {"type": "semantic_text"},
-                            "title_semantic": {"type": "semantic_text"},
-                            "title_sparse": {"type": "semantic_text"},
+                            "content_sparse": {"type": "semantic_text"},
+                            "clean_title": {"type": "semantic_text"},
+                            "headings": {"type": "semantic_text"},
                         }
                     }
                 }
@@ -130,7 +134,7 @@ class ElasticsearchDispatchTest(unittest.TestCase):
 
         self.assertEqual([], dispatch._client.indices.put_mapping_calls)
 
-    def test_pipeline_populates_title_sparse_from_clean_title(self) -> None:
+    def test_pipeline_populates_v4_sparse_fields_and_removes_old_fields(self) -> None:
         script_sources = [
             processor["script"]["source"]
             for processor in OPEN_RAG_PIPELINE["processors"]
@@ -141,9 +145,24 @@ class ElasticsearchDispatchTest(unittest.TestCase):
             source for source in script_sources if "String cleanTitle" in source
         )
 
-        self.assertIn("ctx.title_sparse.replace", escape_source)
-        self.assertIn("String sparseTitle = cleanTitle(ctx.title_sparse)", normalization_source)
-        self.assertIn("ctx.title_sparse = sparseTitle", normalization_source)
+        self.assertIn("ctx.content_sparse = escapeText(ctx.content_sparse)", escape_source)
+        self.assertIn("ctx.clean_title = escapeText(ctx.clean_title)", escape_source)
+        self.assertIn("for (def heading : ctx.headings)", escape_source)
+        self.assertIn("String cleanedTitle = cleanTitle(ctx.clean_title)", normalization_source)
+        self.assertIn("String sourceTitle = cleanTitle(ctx.source_file_name)", normalization_source)
+        self.assertIn("ctx.headings = normalizeTextList(ctx.headings)", normalization_source)
+        self.assertIn("ctx.content_sparse = ctx.content", normalization_source)
+
+        remove_fields = [
+            field
+            for processor in OPEN_RAG_PIPELINE["processors"]
+            if "remove" in processor
+            for field in processor["remove"]["field"]
+        ]
+        self.assertIn("title_semantic", remove_fields)
+        self.assertIn("title_sparse", remove_fields)
+        self.assertIn("raw_text", remove_fields)
+        self.assertIn("raw_data", remove_fields)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import sys
 from threading import Thread, Event
+from typing import Any
 from uuid import uuid4
 
 
@@ -27,9 +28,10 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import UploadFile
+from fastapi.responses import FileResponse
 
 from config.config import load_server_config
-from config.paths import UPLOAD_DIR
+from config.paths import OUTPUT_DIR, UPLOAD_DIR
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
 from queues.queue_local import put_item
@@ -42,6 +44,8 @@ logging.basicConfig(
     force=True,
 )
 LOGGER = logging.getLogger("ingest-server-orquestator.api")
+
+_PRIVATE_JOB_FIELDS = {"output_path"}
 
 
 def _build_metrics_store() -> tuple[object | None, JobMetricsStore]:
@@ -85,6 +89,36 @@ def _save_upload(file: UploadFile, filename: str) -> tuple[Path, int]:
         shutil.copyfileobj(file.file, output_file)
 
     return target_path, target_path.stat().st_size
+
+
+def _validated_output_path(job: dict[str, Any]) -> Path:
+    output_path = job.get("output_path")
+    if not output_path:
+        raise HTTPException(status_code=404, detail="Job output not found")
+
+    path = Path(str(output_path))
+    if not path.is_absolute():
+        path = OUTPUT_DIR / path
+
+    output_root = OUTPUT_DIR.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(output_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Job output not found") from exc
+
+    if not resolved_path.is_file():
+        raise HTTPException(status_code=404, detail="Job output not found")
+
+    return resolved_path
+
+
+def _public_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in job.items()
+        if key not in _PRIVATE_JOB_FIELDS
+    }
 
 
 @asynccontextmanager
@@ -201,7 +235,8 @@ async def ingest_jobs(
         stage=stage,
         limit=limit,
     )
-    return {"jobs": jobs, "count": len(jobs)}
+    public_jobs = [_public_job(job) for job in jobs]
+    return {"jobs": public_jobs, "count": len(public_jobs)}
 
 
 @app.get("/api/v1/ingest/jobs/{job_id}")
@@ -209,4 +244,18 @@ async def ingest_job(request: Request, job_id: str):
     job = request.app.state.metrics_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job metrics not found")
-    return {"job": job}
+    return {"job": _public_job(job)}
+
+
+@app.get("/api/v1/ingest/jobs/{job_id}/output")
+async def ingest_job_output(request: Request, job_id: str):
+    job = request.app.state.metrics_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job metrics not found")
+
+    path = _validated_output_path(job)
+    return FileResponse(
+        path=path,
+        filename=str(job.get("output_file_name") or path.name),
+        media_type="text/markdown",
+    )

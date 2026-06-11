@@ -31,7 +31,7 @@ The tool returns:
 
 Relevant document fields may include:
 
-- `title`, `clean_title`, `title_semantic`, and `source_file_name`
+- `title`, `clean_title`, and `source_file_name`
 - `content`
 - `headings`
 - `page_start`, `page_end`, `page_number`, and `page_numbers`

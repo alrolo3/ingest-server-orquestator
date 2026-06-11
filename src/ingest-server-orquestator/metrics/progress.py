@@ -63,6 +63,14 @@ class ProgressReporter:
     def chunks_dispatched(self, count: int) -> None:
         self.store.update(self.job_id, chunks_dispatched=max(0, int(count)))
 
+    def set_output(self, *, file_name: str, path: str, url: str) -> None:
+        self.store.update(
+            self.job_id,
+            output_file_name=file_name,
+            output_path=path,
+            output_url=url,
+        )
+
     def record_timing(self, name: str, seconds: float) -> None:
         timing_name = str(name).strip().lower()
         if not timing_name:
@@ -146,6 +154,10 @@ class NullProgressReporter:
 
     @staticmethod
     def chunks_dispatched(_count: int) -> None:
+        return None
+
+    @staticmethod
+    def set_output(*, file_name: str, path: str, url: str) -> None:
         return None
 
     @staticmethod

@@ -10,9 +10,15 @@ _UPLOAD_UUID_PREFIX_RE = re.compile(
     r")-"
 )
 _DOCUMENT_EXTENSION_RE = re.compile(
-    r"\.(?:pdf|docx?|pptx?|xlsx?|txt|md|html?)$",
+    r"\.(?:pdf|docx?|pptx?|xlsx?|csv|rtf|txt|md|html?)$",
     re.IGNORECASE,
 )
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _sanitize_title_text(value: str) -> str:
+    title = "".join(char if char.isalnum() else " " for char in value)
+    return _WHITESPACE_RE.sub(" ", title).strip()
 
 
 def normalize_document_title(
@@ -31,4 +37,5 @@ def normalize_document_title(
     if strip_extension:
         title = _DOCUMENT_EXTENSION_RE.sub("", title).strip()
 
+    title = _sanitize_title_text(title)
     return title or None

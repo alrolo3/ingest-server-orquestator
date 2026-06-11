@@ -77,9 +77,9 @@ class ServerConfigTest(unittest.TestCase):
             "RW9RbG1aNEJ4QVZwbFVaNjNhOEc6QTY1b1V2cDU4MUUxWHZjeTkxTkx4UQ==",
             settings.elastic_api_key,
         )
-        self.assertEqual("open-rag-embeddings-v3", settings.elastic_index_name)
+        self.assertEqual("open-rag-embeddings-v4", settings.elastic_index_name)
         self.assertEqual(
-            "open_rag_embeddings_v3_multilingual_semantic_pipeline",
+            "open_rag_embeddings_v4_multilingual_semantic_pipeline",
             settings.elastic_pipeline_name,
         )
         self.assertEqual("qwen3-embedding-4b", settings.elastic_inference_id)
@@ -306,32 +306,27 @@ class ServerConfigTest(unittest.TestCase):
             mappings["properties"]["content"]["inference_id"],
         )
         self.assertEqual(
-            "custom-inference",
-            mappings["properties"]["title_semantic"]["inference_id"],
-        )
-        self.assertEqual(
             {
                 "inference_id": "opensearch-multilingual-neural-sparse",
                 "task_type": "sparse_embedding",
             },
-            mappings["_meta"]["title_sparse_inference"],
+            mappings["_meta"]["sparse_semantic_inference"],
         )
-        self.assertEqual(
-            "opensearch-multilingual-neural-sparse",
-            mappings["properties"]["title_sparse"]["inference_id"],
-        )
-        self.assertEqual(
-            {"strategy": "none"},
-            mappings["properties"]["title_sparse"]["chunking_settings"],
-        )
-        self.assertNotIn("index_options", mappings["properties"]["title_sparse"])
-        self.assertNotIn("model_settings", mappings["properties"]["title_sparse"])
-        self.assertEqual(
-            "semantic_text",
-            mappings["properties"]["title_semantic"]["type"],
-        )
+        for field_name in ("content_sparse", "clean_title", "headings"):
+            field_mapping = mappings["properties"][field_name]
+            self.assertEqual("semantic_text", field_mapping["type"])
+            self.assertEqual(
+                "opensearch-multilingual-neural-sparse",
+                field_mapping["inference_id"],
+            )
+            self.assertEqual({"strategy": "none"}, field_mapping["chunking_settings"])
+            self.assertNotIn("index_options", field_mapping)
+            self.assertNotIn("model_settings", field_mapping)
+        self.assertNotIn("title_semantic", mappings["properties"])
+        self.assertNotIn("title_sparse", mappings["properties"])
+        self.assertNotIn("raw_text", mappings["properties"])
 
-    def test_elastic_pipeline_keeps_title_semantic(self) -> None:
+    def test_elastic_pipeline_removes_old_title_and_raw_fields(self) -> None:
         remove_fields = [
             field
             for processor in OPEN_RAG_PIPELINE["processors"]
@@ -339,7 +334,10 @@ class ServerConfigTest(unittest.TestCase):
             for field in processor["remove"]["field"]
         ]
 
-        self.assertNotIn("title_semantic", remove_fields)
+        self.assertIn("title_semantic", remove_fields)
+        self.assertIn("title_sparse", remove_fields)
+        self.assertIn("raw_text", remove_fields)
+        self.assertIn("raw_data", remove_fields)
 
     def test_docling_table_mode_validates_supported_values(self) -> None:
         with patch.dict(os.environ, {"DOCLING_TABLE_MODE": "precise"}, clear=True):

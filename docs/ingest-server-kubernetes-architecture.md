@@ -177,8 +177,8 @@ Live ConfigMap values include:
 | `DOCLING_SURYA_INFERENCE_URL` | `http://surya-vllm:8000/v1` |
 | `DOCLING_PICTURE_DESCRIPTION_URL` | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
 | `ELASTIC_HOSTS` / `ELASTIC_URL` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
-| `ELASTIC_INDEX_NAME` | `open-rag-embeddings-v3` |
-| `ELASTIC_PIPELINE_NAME` | `open_rag_embeddings_v3_multilingual_semantic_pipeline` |
+| `ELASTIC_INDEX_NAME` | `open-rag-embeddings-v4` |
+| `ELASTIC_PIPELINE_NAME` | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
 | `ELASTIC_INFERENCE_ID` | `openai-text_embedding-qwen3-embedding-4b` |
 | `ELASTIC_BULK_BATCH_SIZE` | `20` |
 | `ELASTIC_VERIFY_CERTS` | `false` |
@@ -252,8 +252,8 @@ Elasticsearch API state:
 | Cluster name | `quickstart` |
 | Active data nodes | `3` |
 | Active shard percent | `100%` |
-| RAG index | `open-rag-embeddings-v3` |
-| RAG index default pipeline | `open_rag_embeddings_v3_multilingual_semantic_pipeline` |
+| RAG index | `open-rag-embeddings-v4` |
+| RAG index default pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
 | RAG index documents | `3372` chunks from `17` document IDs |
 
 ### Kibana
@@ -270,19 +270,21 @@ Elasticsearch API state:
 
 ## RAG Index And Inference Endpoints
 
-The live RAG index is `open-rag-embeddings-v3`.
+The target RAG index is `open-rag-embeddings-v4`.
 
 | Mapping field | Purpose |
 | --- | --- |
 | `content` | `semantic_text` field with inference ID `openai-text_embedding-qwen3-embedding-4b` |
-| `title_semantic` | Cleaned title `semantic_text` field with inference ID `openai-text_embedding-qwen3-embedding-4b` |
+| `content_sparse` | Chunk content indexed as sparse `semantic_text` with inference ID `opensearch-multilingual-neural-sparse` |
+| `clean_title` | Sanitized title indexed as sparse `semantic_text` with inference ID `opensearch-multilingual-neural-sparse` |
+| `headings` | Docling heading hierarchy indexed as sparse `semantic_text` with inference ID `opensearch-multilingual-neural-sparse` |
 | `content_lex.en` | English BM25 field |
 | `content_lex.es` | Spanish BM25 field |
 | `content_lex.fr` | French BM25 field |
 | `document_id` | Upload/job document identifier |
 | `chunk_id` | Stable chunk identifier, also used as Elasticsearch `_id` |
 | `page_number`, `page_numbers` | Page metadata from Docling chunk provenance |
-| `source_file_name`, `title`, `clean_title` | Source and cleaned title metadata |
+| `source_file_name`, `title` | Source and title metadata |
 | `record_type`, `searchable`, `boilerplate`, `content_kind` | Retrieval filters and helpers |
 
 Live Elastic inference endpoints relevant to this stack:
@@ -296,7 +298,7 @@ Live Elastic inference endpoints relevant to this stack:
 | `.elser-2-elasticsearch` | sparse embedding | Native Elastic inference |
 | `.multilingual-e5-small-elasticsearch` | text embedding | Native Elastic inference |
 
-The live RAG workflow is stored in Elasticsearch index `.workflows-workflows-000001` with ID `rag-query-retrieval-tool-v3-conversation-aware`. It is enabled and was updated on `2026-06-09T11:20:11.273Z`.
+The target RAG workflow ID is `rag-query-retrieval-tool-v4-conversation-aware`.
 
 ## Storage
 

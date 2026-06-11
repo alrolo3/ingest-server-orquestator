@@ -115,8 +115,8 @@ class ServerConfig:
     docling_formula_enrichment_enabled: bool = _DOCLING_FORMULA_ENRICHMENT_ENABLED
     elastic_hosts: list[str] = field(default_factory=_default_elastic_hosts)
     elastic_api_key: str | None = _DEFAULT_ELASTIC_API_KEY
-    elastic_index_name: str = "open-rag-embeddings-v3"
-    elastic_pipeline_name: str = "open_rag_embeddings_v3_multilingual_semantic_pipeline"
+    elastic_index_name: str = "open-rag-embeddings-v4"
+    elastic_pipeline_name: str = "open_rag_embeddings_v4_multilingual_semantic_pipeline"
     elastic_inference_id: str = _DEFAULT_ELASTIC_INFERENCE_ID
     elastic_verify_certs: bool = False
     elastic_ssl_show_warn: bool = False
@@ -342,10 +342,10 @@ def _load_server_config_from_env() -> ServerConfig:
             "ELASTIC_API_KEY",
             _DEFAULT_ELASTIC_API_KEY,
         ),
-        elastic_index_name=getenv("ELASTIC_INDEX_NAME", "open-rag-embeddings-v3"),
+        elastic_index_name=getenv("ELASTIC_INDEX_NAME", "open-rag-embeddings-v4"),
         elastic_pipeline_name=getenv(
             "ELASTIC_PIPELINE_NAME",
-            "open_rag_embeddings_v3_multilingual_semantic_pipeline",
+            "open_rag_embeddings_v4_multilingual_semantic_pipeline",
         ),
         elastic_inference_id=getenv(
             "ELASTIC_INFERENCE_ID",

@@ -37,6 +37,7 @@ class GradioMetricsTest(unittest.TestCase):
                     "chunks_per_second": 1.2,
                     "message": "Job done.",
                     "finished_at": "t2",
+                    "output_url": "/api/v1/ingest/jobs/job-1/output",
                 },
                 {
                     "file_name": "bad.pdf",
@@ -47,7 +48,8 @@ class GradioMetricsTest(unittest.TestCase):
                     "error": "parse failed",
                     "finished_at": "t3",
                 },
-            ]
+            ],
+            backend_url="http://backend",
         )
 
         self.assertEqual("Jobs: 3 total, 1 active, 1 done, 1 failed.", summary)
@@ -58,6 +60,10 @@ class GradioMetricsTest(unittest.TestCase):
         self.assertEqual("12.3s", processed_rows[0][4])
         self.assertEqual("parse", processed_rows[0][5])
         self.assertEqual("0.33 p/s, 1.20 c/s", processed_rows[0][6])
+        self.assertEqual(
+            "[Download](<http://backend/api/v1/ingest/jobs/job-1/output>)",
+            processed_rows[0][9],
+        )
         self.assertEqual("bad.pdf", error_rows[0][0])
         self.assertEqual("parse failed", error_rows[0][5])
 

@@ -48,13 +48,13 @@ class DoclingParserTest(unittest.TestCase):
             name="7b6c94b653dc44d3b5bc68c5d080189a-guia-notificacion.pdf"
         )
 
-        self.assertEqual("guia-notificacion", _document_title(doc))
+        self.assertEqual("guia notificacion", _document_title(doc))
 
     def test_document_title_uses_source_file_fallback(self) -> None:
         doc = DoclingDocument(name="")
 
         self.assertEqual(
-            "guia-notificacion",
+            "guia notificacion",
             _document_title(
                 doc,
                 source_file_name=(

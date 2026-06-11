@@ -10,6 +10,7 @@ import requests
 
 
 DEFAULT_BACKEND_URL = os.getenv("INGEST_API_URL", "http://127.0.0.1:8000")
+DEFAULT_DOWNLOAD_BASE_URL = os.getenv("INGEST_DOWNLOAD_BASE_URL", "").strip()
 INGEST_FILE_ENDPOINT = "/api/v1/ingest/file"
 INGEST_JOBS_ENDPOINT = "/api/v1/ingest/jobs"
 GRADIO_SERVER_NAME = "0.0.0.0"
@@ -39,8 +40,10 @@ PROCESSED_HEADERS = [
     "Rate",
     "Finished",
     "Message",
+    "Output",
 ]
 ERROR_HEADERS = ["File", "Stage", "Pages", "Elapsed", "Slowest", "Error", "Finished"]
+PROCESSED_DATATYPES = ["str"] * (len(PROCESSED_HEADERS) - 1) + ["markdown"]
 
 
 def _target_url(base_url: str, endpoint_path: str) -> str:
@@ -53,6 +56,18 @@ def _target_url(base_url: str, endpoint_path: str) -> str:
 
 def _jobs_url(base_url: str) -> str:
     return _target_url(base_url, INGEST_JOBS_ENDPOINT)
+
+
+def _absolute_url(base_url: str, path_or_url: str) -> str:
+    value = str(path_or_url or "").strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://")):
+        return value
+    base = (DEFAULT_DOWNLOAD_BASE_URL or base_url or DEFAULT_BACKEND_URL).strip()
+    if not base:
+        return value
+    return f"{base.rstrip('/')}/{value.lstrip('/')}"
 
 
 def _uploaded_path(uploaded_file: Any) -> Path:
@@ -188,7 +203,18 @@ def _active_row(job: dict[str, Any]) -> list[Any]:
     ]
 
 
-def _processed_row(job: dict[str, Any]) -> list[Any]:
+def _download_link(job: dict[str, Any], backend_url: str) -> str:
+    output_url = job.get("output_url")
+    if not output_url and job.get("job_id") and (
+        job.get("output_file_name") or job.get("output_path")
+    ):
+        output_url = f"/api/v1/ingest/jobs/{job['job_id']}/output"
+    if not output_url:
+        return ""
+    return f"[Download](<{_absolute_url(backend_url, str(output_url))}>)"
+
+
+def _processed_row(job: dict[str, Any], backend_url: str) -> list[Any]:
     return [
         job.get("file_name") or "",
         job.get("status") or "",
@@ -199,6 +225,7 @@ def _processed_row(job: dict[str, Any]) -> list[Any]:
         _rate_text(job),
         job.get("finished_at") or "",
         job.get("message") or "",
+        _download_link(job, backend_url),
     ]
 
 
@@ -216,6 +243,7 @@ def _error_row(job: dict[str, Any]) -> list[Any]:
 
 def _job_tables(
     jobs: list[dict[str, Any]],
+    backend_url: str = DEFAULT_BACKEND_URL,
 ) -> tuple[str, list[list[Any]], list[list[Any]], list[list[Any]]]:
     active_jobs = [
         job for job in jobs if job.get("status") not in {"done", "failed"}
@@ -229,7 +257,7 @@ def _job_tables(
     return (
         summary,
         [_active_row(job) for job in active_jobs],
-        [_processed_row(job) for job in processed_jobs],
+        [_processed_row(job, backend_url) for job in processed_jobs],
         [_error_row(job) for job in error_jobs],
     )
 
@@ -248,7 +276,7 @@ def fetch_job_metrics(
     except requests.RequestException as exc:
         return f"Could not load job metrics from `{url}`: {exc}", [], [], []
 
-    return _job_tables(_jobs_from_response(_response_body(response)))
+    return _job_tables(_jobs_from_response(_response_body(response)), backend_url)
 
 
 def post_files(uploaded_files: Any, backend_url: str) -> tuple[str, list[dict[str, Any]]]:
@@ -370,7 +398,7 @@ def build_app() -> gr.Blocks:
         )
         processed_jobs = gr.Dataframe(
             headers=PROCESSED_HEADERS,
-            datatype=["str"] * len(PROCESSED_HEADERS),
+            datatype=PROCESSED_DATATYPES,
             interactive=False,
             label="Processed",
         )

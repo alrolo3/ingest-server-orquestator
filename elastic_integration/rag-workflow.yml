@@ -1,8 +1,8 @@
 
 version: "1"
-name: RAG query retrieval tool v3 conversation aware
+name: RAG query retrieval tool v4 conversation aware
 enabled: true
-description: Multilingual, conversation-aware RAG retrieval workflow for open-rag-embeddings-v3. Rewrites the current user question with recent conversation context into a standalone retrieval query, generates English and Spanish retrieval variants, searches lexical and semantic branches with RRF without hard-filtering document language, expands same-page and neighboring-page context, and returns retrieved chunks for grounded Agent Builder answers.
+description: Multilingual, conversation-aware RAG retrieval workflow for open-rag-embeddings-v4. Rewrites the current user question with recent conversation context into a standalone retrieval query, generates English and Spanish retrieval variants, searches lexical and sparse/dense semantic branches with RRF without hard-filtering document language, expands same-page and neighboring-page context, and returns retrieved chunks for grounded Agent Builder answers.
 
 triggers:
   - type: manual
@@ -21,7 +21,7 @@ inputs:
     default: ""
 
 consts:
-  indexName: open-rag-embeddings-v3
+  indexName: open-rag-embeddings-v4
   resultSize: 10
   expansionSize: 30
 
@@ -93,7 +93,6 @@ steps:
           - document_id
           - clean_title
           - title
-          - title_semantic
           - content
           - headings
           - page_number
@@ -130,9 +129,7 @@ steps:
                         - content_lex.pt^2
                         - content_lex.ca^2
                         - content_lex.gl^2
-                        - clean_title^6
                         - title^5
-                        - headings^2
                         - source_file_name.text^0.2
                       type: best_fields
                       operator: or
@@ -152,9 +149,7 @@ steps:
                         - content_lex.pt
                         - content_lex.ca
                         - content_lex.gl
-                        - clean_title^5
                         - title^4
-                        - headings^1.5
                         - source_file_name.text^0.2
                       type: best_fields
                       operator: or
@@ -166,9 +161,7 @@ steps:
                       query: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
                       fields:
                         - content_lex.en^3
-                        - clean_title^6
                         - title^5
-                        - headings^2
                         - source_file_name.text^0.2
                       type: best_fields
                       operator: or
@@ -180,9 +173,7 @@ steps:
                       query: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
                       fields:
                         - content_lex.es^3
-                        - clean_title^6
                         - title^5
-                        - headings^2
                         - source_file_name.text^0.2
                       type: best_fields
                       operator: or
@@ -196,27 +187,57 @@ steps:
 
               - standard:
                   query:
-                    match:
-                      title_semantic:
-                        query: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
+                    semantic:
+                      field: content_sparse
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
 
               - standard:
                   query:
-                    match:
-                      title_semantic:
-                        query: "{{ steps.conversation_aware_query_rewrite.output.content.question_original }}"
+                    semantic:
+                      field: clean_title
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
 
               - standard:
                   query:
-                    match:
-                      title_semantic:
-                        query: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
+                    semantic:
+                      field: clean_title
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.question_original }}"
 
               - standard:
                   query:
-                    match:
-                      title_semantic:
-                        query: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
+                    semantic:
+                      field: clean_title
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
+
+              - standard:
+                  query:
+                    semantic:
+                      field: clean_title
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
+
+              - standard:
+                  query:
+                    semantic:
+                      field: headings
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
+
+              - standard:
+                  query:
+                    semantic:
+                      field: headings
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.question_original }}"
+
+              - standard:
+                  query:
+                    semantic:
+                      field: headings
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
+
+              - standard:
+                  query:
+                    semantic:
+                      field: headings
+                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
 
   - name: map_rrf_hits
     type: data.map
@@ -231,7 +252,6 @@ steps:
         document_id: "{{ item._source.document_id }}"
         title: "{{ item._source.title }}"
         clean_title: "{{ item._source.clean_title }}"
-        title_semantic: "{{ item._source.title_semantic }}"
         headings: "${{ item._source.headings }}"
         source_file_name: "{{ item._source.source_file_name }}"
         language: "{{ item._source.language }}"
@@ -260,7 +280,6 @@ steps:
             "document_id",
             "clean_title",
             "title",
-            "title_semantic",
             "content",
             "headings",
             "page_number",
@@ -334,7 +353,6 @@ steps:
         document_id: "{{ item._source.document_id }}"
         title: "{{ item._source.title }}"
         clean_title: "{{ item._source.clean_title }}"
-        title_semantic: "{{ item._source.title_semantic }}"
         headings: "${{ item._source.headings }}"
         content: "{{ item._source.content }}"
         source_file_name: "{{ item._source.source_file_name }}"
@@ -355,7 +373,7 @@ steps:
       query_en: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
       query_es: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
       answer_language: "{{ steps.conversation_aware_query_rewrite.output.content.answer_language }}"
-      retrieval_strategy: Conversation-aware standalone query rewrite; RRF over standalone multilingual lexical, original question lexical, English lexical, Spanish lexical, content semantic, and heavily promoted title semantic branches; followed by same-page and neighboring-page expansion that always retains first-stage seed hits. Language is used for recall variants, not filtering.
+      retrieval_strategy: Conversation-aware standalone query rewrite; RRF over standalone multilingual lexical, original question lexical, English lexical, Spanish lexical, dense content semantic, sparse content semantic, sparse clean title, and sparse headings branches; followed by same-page and neighboring-page expansion that always retains first-stage seed hits. Language is used for recall variants, not filtering.
       documents: "${{ steps.map_expanded_context_hits.output }}"
       initial_rrf_documents: "${{ steps.map_rrf_hits.output }}"
       instruction: Answer the current user question using only documents as grounding context. initial_rrf_documents is diagnostic metadata only and must not be used as answer evidence. Answer in answer_language. If documents are empty or insufficient, say that the available documents do not provide enough information. Cite/reference document titles, clean titles, source file names, and pages when available. Do not invent facts, URLs, citations, page numbers, or details not present in documents.

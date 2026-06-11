@@ -18,6 +18,7 @@ from config.config import ServerConfig
 from metrics.progress import ProgressReporter
 from model.document_chunk import DocumentChunk
 from model.parsed_document import ParsedDocument
+from model.title_normalization import normalize_document_title
 from processing.base_chunker import AbstractChunker
 
 
@@ -34,6 +35,19 @@ def _docling_chunk_refs(chunk: DocChunk) -> tuple[list[str], list[int]]:
         for prov in item.prov:
             pages.append(prov.page_no)
     return list(dict.fromkeys(item_refs)), sorted(set(pages))
+
+
+def _docling_chunk_headings(chunk: DocChunk) -> list[str]:
+    headings = chunk.meta.headings or []
+    normalized_headings = []
+    seen = set()
+    for heading in headings:
+        value = str(heading).strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized_headings.append(value)
+    return normalized_headings
 
 
 def _markdown_table_cells(line: str) -> list[str]:
@@ -171,22 +185,23 @@ class DoclingChunker(AbstractChunker):
         chunks: list[DocumentChunk] = []
         for chunk in self._chunker.chunk(dl_doc=document.original_out_doc.raw):
             doc_chunk = DocChunk.model_validate(chunk)
-            raw_text = self._chunk_text(doc_chunk)
+            base_text = self._chunk_text(doc_chunk)
             contextualized_text = self._contextualized_text(doc_chunk)
-            content = contextualized_text or raw_text
+            content = contextualized_text or base_text
             if not content:
                 continue
             doc_items, page_numbers = _docling_chunk_refs(doc_chunk)
+            headings = _docling_chunk_headings(doc_chunk)
             chunk_index = len(chunks)
             chunks.append(
                 self._document_chunk(
                     document=document,
                     chunk_index=chunk_index,
                     content=content,
-                    raw_text=raw_text,
                     content_token_count=self._count_tokens(content),
                     doc_items=doc_items,
                     page_numbers=page_numbers,
+                    headings=headings,
                 )
             )
         return chunks
@@ -207,13 +222,21 @@ class DoclingChunker(AbstractChunker):
         document: ParsedDocument,
         chunk_index: int,
         content: str,
-        raw_text: str,
         content_token_count: int | None,
         doc_items: list[str],
         page_numbers: list[int],
+        headings: list[str],
     ) -> DocumentChunk:
+        clean_title = normalize_document_title(
+            document.title,
+            strip_extension=True,
+        ) or normalize_document_title(
+            document.source_file_name,
+            strip_extension=True,
+        )
         return DocumentChunk(
             content=content,
+            content_sparse=content,
             document_id=document.document_id,
             chunk_id=f"{document.document_id}-{chunk_index:05d}",
             chunk_index=chunk_index,
@@ -224,7 +247,7 @@ class DoclingChunker(AbstractChunker):
             page_numbers=page_numbers,
             total_pages=document.page_count,
             title=document.title,
-            title_semantic=document.title,
+            clean_title=clean_title,
+            headings=headings,
             source_file_name=document.source_file_name,
-            raw_text=raw_text,
         )

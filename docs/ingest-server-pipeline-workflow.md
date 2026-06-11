@@ -13,9 +13,9 @@ This document describes the full runtime path from a user uploading a file in Gr
 5. The worker parses the PDF with Docling, using local model artifacts and OCR settings from `ingest-server-config`.
 6. Docling picture description calls go through LiteLLM at `inference-service:4000` and then to vLLM.
 7. The parsed Docling document is chunked with a HuggingFace tokenizer from `/tokenizer`; chunks include page, source, title, token count, and Docling item metadata.
-8. The dispatcher bulk indexes the chunks into Elasticsearch index `open-rag-embeddings-v3` through pipeline `open_rag_embeddings_v3_multilingual_semantic_pipeline`.
-9. The Elasticsearch pipeline normalizes metadata, detects language, routes lexical text into language-specific BM25 fields, and indexes semantic vectors through the Elastic inference endpoint `openai-text_embedding-qwen3-embedding-4b`.
-10. A user opens `https://kibana.simona.local`, asks a question in agentic chat, and the enabled RAG workflow `rag-query-retrieval-tool-v3-conversation-aware` searches the indexed chunks.
+8. The dispatcher bulk indexes the chunks into Elasticsearch index `open-rag-embeddings-v4` through pipeline `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
+9. The Elasticsearch pipeline normalizes metadata, detects language, routes lexical text into language-specific BM25 fields, and indexes dense and sparse semantic fields through Elastic inference endpoints.
+10. A user opens `https://kibana.simona.local`, asks a question in agentic chat, and the enabled RAG workflow `rag-query-retrieval-tool-v4-conversation-aware` searches the indexed chunks.
 11. The workflow rewrites the question, runs multilingual RRF retrieval, expands same-page and neighboring-page context, and returns grounding documents to the agent.
 12. The agent answers only from returned documents and includes references with file, page, and chunk metadata.
 
@@ -34,7 +34,7 @@ sequenceDiagram
     participant LiteLLM as inference-service LiteLLM
     participant VLLMChat as vLLM Qwen3.5/Nemotron
     participant Chunker as Docling HybridChunker
-    participant ES as Elasticsearch open-rag-embeddings-v3
+    participant ES as Elasticsearch open-rag-embeddings-v4
     participant VLLMEmb as vLLM Qwen3-Embedding-4B
 
     User->>Traefik: Upload file in browser
@@ -170,7 +170,7 @@ The chunker:
 - Uses `chunk_max_tokens=8192`.
 - Repeats table headers across split table chunks.
 - Uses contextualized chunk text where available.
-- Preserves raw chunk text.
+- Copies contextualized chunk text into `content_sparse` for sparse semantic retrieval.
 - Extracts Docling item references and page numbers from chunk provenance.
 
 Each indexed `DocumentChunk` includes:
@@ -178,6 +178,7 @@ Each indexed `DocumentChunk` includes:
 | Field | Meaning |
 | --- | --- |
 | `content` | Contextualized chunk text used for retrieval |
+| `content_sparse` | Same contextualized chunk text indexed with sparse semantic inference |
 | `document_id` | The ingest `job_id` |
 | `chunk_id` | `<job_id>-<zero-padded chunk index>` |
 | `chunk_index` | Numeric chunk order |
@@ -188,9 +189,9 @@ Each indexed `DocumentChunk` includes:
 | `page_numbers` | All unique pages in the chunk provenance |
 | `total_pages` | Total pages in the parsed document |
 | `title` | Cleaned document title discovered by Docling or derived from the filename |
-| `title_semantic` | Cleaned title indexed as a semantic retrieval field |
+| `clean_title` | Sanitized title indexed with sparse semantic inference |
+| `headings` | Docling heading hierarchy attached to the chunk |
 | `source_file_name` | Original upload filename |
-| `raw_text` | Non-contextualized chunk text |
 
 ## Elasticsearch Indexing Stage
 
@@ -201,19 +202,19 @@ The dispatcher connects to:
 | Config | Live value |
 | --- | --- |
 | `ELASTIC_HOSTS` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
-| Index | `open-rag-embeddings-v3` |
-| Pipeline | `open_rag_embeddings_v3_multilingual_semantic_pipeline` |
+| Index | `open-rag-embeddings-v4` |
+| Pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
 | Inference ID | `openai-text_embedding-qwen3-embedding-4b` |
 | Bulk batch size | `20` |
 | Bulk timeout | `30m` |
 | Bulk request timeout | `1800s` |
 | Certificate verification | `false` |
 
-`ElasticsearchDispatch` upserts the managed ingest pipeline, creates the index when absent, adds the `title_semantic` mapping to existing indexes when needed, then indexes chunks in bulk. Each bulk item uses:
+`ElasticsearchDispatch` upserts the managed ingest pipeline, creates the index when absent, adds missing v4 sparse semantic mappings to existing v4 indexes when needed, then indexes chunks in bulk. Each bulk item uses:
 
-- `_index`: `open-rag-embeddings-v3`
+- `_index`: `open-rag-embeddings-v4`
 - `_id`: `chunk.chunk_id`
-- pipeline: `open_rag_embeddings_v3_multilingual_semantic_pipeline`
+- pipeline: `open_rag_embeddings_v4_multilingual_semantic_pipeline`
 - `refresh=wait_for`
 - `wait_for_active_shards=1`
 
@@ -225,23 +226,23 @@ The live index is healthy and currently contains:
 | Distinct `document_id` values | `17` |
 | Language split | `en=2737`, `es=633`, `fr=2` |
 | Index shards/replicas | `1` primary, `1` replica |
-| Default pipeline | `open_rag_embeddings_v3_multilingual_semantic_pipeline` |
+| Default pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
 
 ## Ingest Pipeline Details
 
-The live ingest pipeline is `open_rag_embeddings_v3_multilingual_semantic_pipeline`.
+The live ingest pipeline is `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
 
 ```mermaid
 flowchart TD
     chunk[DocumentChunk bulk item]
     ts[Set ingested_at]
-    escape[Escape dollar-brace placeholders<br/>in content and title_semantic]
-    normalize[Normalize helper fields<br/>record_type, clean_title, title_semantic,<br/>searchable, boilerplate, content_kind, content_length]
+    escape[Escape dollar-brace placeholders<br/>in content, content_sparse,<br/>clean_title, and headings]
+    normalize[Normalize helper fields<br/>record_type, clean_title, headings,<br/>content_sparse, searchable, boilerplate,<br/>content_kind, content_length]
     lang[ML inference<br/>lang_ident_model_1]
     route[Route content to one lexical field<br/>content_lex.en/es/fr<br/>default en when unsupported or low confidence]
     remove[Remove temporary fields]
-    semantic[semantic_text fields<br/>content and title_semantic<br/>inference_id openai-text_embedding-qwen3-embedding-4b]
-    endpoint[Elastic inference endpoint<br/>LiteLLM /v1/embeddings]
+    semantic[semantic_text fields<br/>dense content plus sparse content/title/headings]
+    endpoint[Elastic inference endpoints<br/>dense Qwen3 embedding and sparse multilingual]
     indexed[Indexed RAG chunk]
 
     chunk --> ts --> escape --> normalize --> lang --> route --> remove --> semantic --> indexed
@@ -253,14 +254,14 @@ Pipeline processors:
 | Step | Processor | Effect |
 | --- | --- | --- |
 | 1 | `set` | Adds `ingested_at` from `_ingest.timestamp` if absent |
-| 2 | `script` | Escapes `${` in `content` and `title_semantic` to avoid custom inference template conflicts |
-| 3 | `script` | Sets `record_type=chunk`, cleans UUID-prefixed titles, populates `clean_title` and `title_semantic`, sets `content_length`, `searchable=true`, `boilerplate=false`, `content_kind=chunk` |
+| 2 | `script` | Escapes `${` in `content`, `content_sparse`, `clean_title`, and `headings` to avoid custom inference template conflicts |
+| 3 | `script` | Sets `record_type=chunk`, sanitizes filename-style titles into `clean_title`, normalizes `headings`, populates `content_sparse`, sets `content_length`, `searchable=true`, `boilerplate=false`, `content_kind=chunk` |
 | 4 | `inference` | Runs `lang_ident_model_1` on `content` |
 | 5 | `script` | Chooses `es`, `en`, or `fr`; defaults to `en` if unsupported or confidence is below `0.60`; copies content into `content_lex.<lang>` |
 | 6 | `remove` | Removes temporary or legacy fields |
 | failure | `set` | Writes failures to `ingest_error` |
 
-The index mapping stores `content` and `title_semantic` as `semantic_text` fields with no automatic semantic chunking because the app already pre-chunks documents. Both fields use inference endpoint `openai-text_embedding-qwen3-embedding-4b`, which sends embedding requests to LiteLLM at `http://inference-service.default.svc.cluster.local:4000/v1/embeddings` with model `Qwen3-Embedding-4B`.
+The index mapping stores `content` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `opensearch-multilingual-neural-sparse`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
 
 ## Kibana Agentic Chat Retrieval
 
@@ -269,12 +270,12 @@ The live workflow is stored in Elasticsearch:
 | Field | Value |
 | --- | --- |
 | Index | `.workflows-workflows-000001` |
-| Workflow ID | `rag-query-retrieval-tool-v3-conversation-aware` |
-| Name | `RAG query retrieval tool v3 conversation aware` |
+| Workflow ID | `rag-query-retrieval-tool-v4-conversation-aware` |
+| Name | `RAG query retrieval tool v4 conversation aware` |
 | Enabled | `true` |
 | Created | `2026-06-08T21:53:58.328Z` |
 | Updated | `2026-06-09T11:20:11.273Z` |
-| Index constant | `open-rag-embeddings-v3` |
+| Index constant | `open-rag-embeddings-v4` |
 | Result size | `10` |
 | Expansion size | `30` |
 
@@ -294,8 +295,8 @@ flowchart TD
     lexical2[Lexical branch<br/>original question]
     lexicalEN[English lexical branch]
     lexicalES[Spanish lexical branch]
-    semantic[Semantic branch<br/>match on semantic_text content]
-    es[Elasticsearch<br/>open-rag-embeddings-v3]
+    semantic[Semantic branches<br/>dense content plus sparse content/title/headings]
+    es[Elasticsearch<br/>open-rag-embeddings-v4]
     expand[Same-page and neighboring-page expansion<br/>page_number/page_numbers]
     docs[Grounding documents]
     answer[Agent answer with references]
@@ -332,7 +333,7 @@ The `ai.prompt` step rewrites follow-up questions into standalone retrieval quer
 
 ### 2. First-Stage RRF Retrieval
 
-The workflow searches `/open-rag-embeddings-v3/_search` with an RRF retriever.
+The workflow searches `/open-rag-embeddings-v4/_search` with an RRF retriever.
 
 Global filters:
 
@@ -346,14 +347,16 @@ Retrieval branches:
 
 | Branch | Query text | Fields |
 | --- | --- | --- |
-| Standalone lexical | `standalone_question` | `content_lex.en`, `content_lex.es`, `content_lex.fr`, other language fallbacks, `clean_title`, `title`, `headings`, `source_file_name.text` |
+| Standalone lexical | `standalone_question` | `content_lex.en`, `content_lex.es`, `content_lex.fr`, other language fallbacks, `title`, `source_file_name.text` |
 | Original lexical | `question_original` | Same multilingual lexical/title fields |
 | English lexical | `query_en` | `content_lex.en`, title/source fields |
 | Spanish lexical | `query_es` | `content_lex.es`, title/source fields |
 | Content semantic | `standalone_question` | `content` semantic_text |
-| Title semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `title_semantic` semantic_text |
+| Sparse content semantic | `standalone_question` | `content_sparse` sparse semantic_text |
+| Sparse title semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `clean_title` sparse semantic_text |
+| Sparse heading semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `headings` sparse semantic_text |
 
-The current index mapping defines `content_lex.en`, `content_lex.es`, and `content_lex.fr`. The live workflow also lists optional fields such as `content_lex.default`, additional language fields, and `headings`; those clauses are harmless but do not contribute for currently indexed chunks unless future mappings add those fields.
+The current index mapping defines `content_lex.en`, `content_lex.es`, and `content_lex.fr`. The workflow also lists optional lexical fields such as `content_lex.default` and additional language fields; those clauses are harmless unless future mappings add those fields.
 
 The workflow maps first-stage hits into `initial_rrf_documents`.
 

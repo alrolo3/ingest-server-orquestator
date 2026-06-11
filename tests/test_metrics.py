@@ -37,6 +37,11 @@ class JobMetricsStoreTest(unittest.TestCase):
         reporter.chunks_dispatched(7)
         reporter.record_timing("dispatch", 0.25)
         reporter.record_timing("total", 3.0)
+        reporter.set_output(
+            file_name="Sample output.md",
+            path="/outputs/job-1/Sample output.md",
+            url="/api/v1/ingest/jobs/job-1/output",
+        )
         reporter.mark_done()
 
         metrics = store.get(job.job_id)
@@ -59,6 +64,12 @@ class JobMetricsStoreTest(unittest.TestCase):
         self.assertEqual(
             {"parse": 2.0, "chunk": 0.5, "dispatch": 0.25},
             metrics["stage_timings"],
+        )
+        self.assertEqual("Sample output.md", metrics["output_file_name"])
+        self.assertEqual("/outputs/job-1/Sample output.md", metrics["output_path"])
+        self.assertEqual(
+            "/api/v1/ingest/jobs/job-1/output",
+            metrics["output_url"],
         )
         self.assertEqual("Job done: chunks sent to Elasticsearch.", metrics["message"])
         self.assertIsNone(metrics["error"])

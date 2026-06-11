@@ -12,6 +12,7 @@ class JobStage(StrEnum):
     PARSING = "parsing"
     CHUNKING = "chunking"
     DISPATCHING = "dispatching"
+    OUTPUTTING = "outputting"
     DONE = "done"
     FAILED = "failed"
 
@@ -62,6 +63,9 @@ class JobMetrics:
     dispatch_chunks_per_second: float | None
     slowest_stage: str | None
     stage_timings: dict[str, float]
+    output_file_name: str | None
+    output_path: str | None
+    output_url: str | None
     error: str | None
     created_at: str
     started_at: str | None
@@ -106,6 +110,9 @@ class JobMetrics:
             dispatch_chunks_per_second=None,
             slowest_stage=None,
             stage_timings={},
+            output_file_name=None,
+            output_path=None,
+            output_url=None,
             error=None,
             created_at=now,
             started_at=None,
