@@ -10,7 +10,7 @@ This document describes the full runtime path from a user uploading a file in Gr
 2. Gradio posts each file to the internal ingest API at `http://ingest-server.default.svc.cluster.local:8000/api/v1/ingest/file` with form value `source=gradio`.
 3. The FastAPI ingest server writes the uploaded file to `/uploads`, creates a `Job`, records in-memory metrics, and enqueues the job in a process-local queue.
 4. The API process already has an `InboundWorker` thread running. It dequeues jobs and starts a spawned worker process with `ProcessPoolExecutor`.
-5. The worker parses the PDF with Docling, using local model artifacts and OCR settings from `ingest-server-config`.
+5. The worker parses the PDF, Markdown, or JSON file with Docling, preprocessing arbitrary JSON to Markdown before conversion and using local model artifacts and OCR settings from `ingest-server-config` for PDF processing.
 6. Docling picture description calls go through LiteLLM at `inference-service:4000` and then to vLLM.
 7. The parsed Docling document is chunked with a HuggingFace tokenizer from `/tokenizer`; chunks include page, source, title, token count, and Docling item metadata.
 8. The dispatcher bulk indexes the chunks into Elasticsearch index `open-rag-embeddings-v4` through pipeline `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
@@ -46,7 +46,7 @@ sequenceDiagram
     Gradio->>API: Poll /api/v1/ingest/jobs
 
     Queue->>Worker: Dequeue job
-    Worker->>Docling: Parse PDF with configured OCR and local artifacts
+    Worker->>Docling: Parse PDF, Markdown, or JSON-derived Markdown
     Docling->>LiteLLM: Picture descriptions /v1/chat/completions
     LiteLLM->>VLLMChat: Route to configured chat model
     Docling-->>Worker: ParsedDocument
@@ -148,7 +148,7 @@ Docling parser settings come from `ingest-server-config`.
 
 The Docling parser:
 
-- Allows PDF input.
+- Allows PDF, Markdown, and arbitrary JSON input. JSON is converted to Markdown before Docling conversion.
 - Uses local artifacts from `/docling-models`.
 - Uses PPDocLayout model path from the mounted model volume.
 - Can select EasyOCR, MinerU, Surya OCR 2, RapidOCR, or Docling auto OCR through
@@ -168,6 +168,9 @@ The chunker:
 - Uses Docling `HybridChunker`.
 - Loads the tokenizer from `/tokenizer`.
 - Uses `chunk_max_tokens=8192`.
+- Emits Markdown-like documents without pages as one chunk when the full exported
+  Markdown is at or below `16,000` tokenizer tokens. Larger Markdown-like
+  documents still use Docling token chunking.
 - Repeats table headers across split table chunks.
 - Uses contextualized chunk text where available.
 - Copies contextualized chunk text into `content_sparse` for sparse semantic retrieval.
@@ -261,7 +264,7 @@ Pipeline processors:
 | 6 | `remove` | Removes temporary or legacy fields |
 | failure | `set` | Writes failures to `ingest_error` |
 
-The index mapping stores `content` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `opensearch-multilingual-neural-sparse`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
+The index mapping stores `content` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `spanish-splade-v3-strong_search`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
 
 ## Kibana Agentic Chat Retrieval
 

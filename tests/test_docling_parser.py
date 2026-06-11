@@ -10,13 +10,16 @@ sys.path.insert(0, str(SRC_DIR))
 
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import EasyOcrOptions, TableFormerMode
+from docling.document_converter import MarkdownFormatOption, SimplePipeline
 from docling_core.types.doc.document import DoclingDocument, TitleItem
 
 from config.config import ServerConfig
 from metrics.progress import NullProgressReporter
 from processing.parsers.docling_parser import (
     DoclingParser,
+    _JSON_INPUT_FORMAT,
     _docling_ocr_options,
+    _docling_input_format,
     _document_title,
 )
 from processing.parsers.docling_progress import ProgressReportingStandardPdfPipeline
@@ -26,6 +29,34 @@ from queues.domain.job import Job
 
 
 class DoclingParserTest(unittest.TestCase):
+    def test_input_format_detects_markdown_by_mime_type(self) -> None:
+        self.assertEqual(
+            InputFormat.MD,
+            _docling_input_format(Path("uploaded"), "text/markdown; charset=utf-8"),
+        )
+
+    def test_input_format_detects_markdown_by_extension(self) -> None:
+        self.assertEqual(
+            InputFormat.MD,
+            _docling_input_format(Path("uploaded.markdown"), "application/octet-stream"),
+        )
+
+    def test_input_format_detects_json_by_mime_type(self) -> None:
+        self.assertEqual(
+            _JSON_INPUT_FORMAT,
+            _docling_input_format(Path("uploaded"), "application/activity+json"),
+        )
+
+    def test_input_format_detects_json_by_extension(self) -> None:
+        self.assertEqual(
+            _JSON_INPUT_FORMAT,
+            _docling_input_format(Path("uploaded.json"), "application/octet-stream"),
+        )
+
+    def test_input_format_rejects_unsupported_files(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unsupported document format"):
+            _docling_input_format(Path("uploaded.txt"), "text/plain")
+
     def test_document_title_uses_docling_title_item(self) -> None:
         doc = DoclingDocument(name="fallback")
         doc.texts.append(
@@ -141,6 +172,127 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual(str(source_path), parsed_document.source_path)
         self.assertEqual("application/pdf", parsed_document.mime_type)
         self.assertEqual("fallback", parsed_document.title)
+
+    def test_parse_supports_markdown_files(self) -> None:
+        doc = DoclingDocument(name="fallback")
+        converter = MagicMock()
+        converter.convert.return_value = SimpleNamespace(document=doc)
+
+        with patch(
+            "processing.parsers.docling_parser.DocumentConverter",
+            return_value=converter,
+        ) as document_converter:
+            parser = DoclingParser(
+                type="docling",
+                server_config=ServerConfig(
+                    app_name="test",
+                    environment="test",
+                    inbound_queue_name="inbound",
+                    worker_max_workers=1,
+                    chunk_max_tokens=2048,
+                    tokenizer_path=Path("/tmp/tokenizer"),
+                    docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                    docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+                ),
+            )
+            with TemporaryDirectory() as temp_dir:
+                source_path = Path(temp_dir) / "uploaded.md"
+                source_path.write_text("# Uploaded\n\nBody", encoding="utf-8")
+                job = Job(
+                    job_id="job-1",
+                    parser_type="docling",
+                    input_data={
+                        "file_path": str(source_path),
+                        "file_name": "uploaded.md",
+                        "mime_type": "text/markdown",
+                    },
+                    chunker_type="docling",
+                )
+
+                parsed_document = parser.parse(job, NullProgressReporter())
+
+        allowed_formats = document_converter.call_args.kwargs["allowed_formats"]
+        format_options = document_converter.call_args.kwargs["format_options"]
+        markdown_options = format_options[InputFormat.MD]
+
+        self.assertEqual([InputFormat.PDF, InputFormat.MD], allowed_formats)
+        self.assertIsInstance(markdown_options, MarkdownFormatOption)
+        self.assertIs(SimplePipeline, markdown_options.pipeline_cls)
+        self.assertIsNone(markdown_options.pipeline_options.artifacts_path)
+        self.assertFalse(markdown_options.pipeline_options.enable_remote_services)
+        self.assertFalse(markdown_options.pipeline_options.allow_external_plugins)
+        self.assertFalse(markdown_options.backend_options.enable_remote_fetch)
+        self.assertFalse(markdown_options.backend_options.enable_local_fetch)
+        self.assertFalse(markdown_options.backend_options.fetch_images)
+        converter.convert.assert_called_once_with(source_path)
+        self.assertEqual("uploaded.md", parsed_document.source_file_name)
+        self.assertEqual(str(source_path), parsed_document.source_path)
+        self.assertEqual("text/markdown", parsed_document.mime_type)
+        self.assertEqual("fallback", parsed_document.title)
+
+    def test_parse_preprocesses_arbitrary_json_as_markdown(self) -> None:
+        doc = DoclingDocument(name="uploaded")
+        converter = MagicMock()
+        converter.convert_string.return_value = SimpleNamespace(document=doc)
+
+        with patch(
+            "processing.parsers.docling_parser.DocumentConverter",
+            return_value=converter,
+        ) as document_converter:
+            parser = DoclingParser(
+                type="docling",
+                server_config=ServerConfig(
+                    app_name="test",
+                    environment="test",
+                    inbound_queue_name="inbound",
+                    worker_max_workers=1,
+                    chunk_max_tokens=2048,
+                    tokenizer_path=Path("/tmp/tokenizer"),
+                    docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                    docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+                ),
+            )
+            with TemporaryDirectory() as temp_dir:
+                source_path = Path(temp_dir) / "uploaded.json"
+                source_path.write_text(
+                    '{"users": [{"id": 1, "name": "A"}]}',
+                    encoding="utf-8",
+                )
+                job = Job(
+                    job_id="job-1",
+                    parser_type="docling",
+                    input_data={
+                        "file_path": str(source_path),
+                        "file_name": "uploaded.json",
+                        "mime_type": "application/json",
+                    },
+                    chunker_type="docling",
+                )
+
+                parsed_document = parser.parse(job, NullProgressReporter())
+
+        allowed_formats = document_converter.call_args.kwargs["allowed_formats"]
+        self.assertEqual([InputFormat.PDF, InputFormat.MD], allowed_formats)
+        converter.convert.assert_not_called()
+        converter.convert_string.assert_called_once()
+        markdown, = converter.convert_string.call_args.args
+        self.assertIn("# uploaded", markdown)
+        self.assertIn("| id | name |", markdown)
+        self.assertEqual(InputFormat.MD, converter.convert_string.call_args.kwargs["format"])
+        self.assertEqual("uploaded", converter.convert_string.call_args.kwargs["name"])
+        self.assertEqual("uploaded.json", parsed_document.source_file_name)
+        self.assertEqual(str(source_path), parsed_document.source_path)
+        self.assertEqual("application/json", parsed_document.mime_type)
+        self.assertEqual(
+            {
+                "docling": {
+                    "parser": "docling",
+                    "input_format": "json",
+                    "preprocessed_format": "md",
+                }
+            },
+            parsed_document.metadata,
+        )
 
     def test_parse_uses_configurable_performance_options(self) -> None:
         doc = DoclingDocument(name="fallback")

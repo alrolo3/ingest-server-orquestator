@@ -4,6 +4,7 @@ from config.gpu import configure_gpu_environment, configure_torch_cuda_device
 # Must run before importing torch or parser modules that can load CUDA libraries.
 configure_gpu_environment()
 
+import json
 import logging
 from os import getenv
 from pathlib import Path
@@ -19,6 +20,7 @@ from dispatcher.elastic.elastic import ElasticsearchDispatch
 from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
 from metrics.store import JobMetricsStore
+from model.document_chunk import DocumentChunk
 from processing.chunker_factory import ChunkerFactory
 from processing.parseer_factory import ParserFactory
 from queues.domain.job import Job
@@ -71,13 +73,38 @@ def _output_url(job_id: str) -> str:
     return f"/api/v1/ingest/jobs/{job_id}/output"
 
 
+def _job_output_dir(job: Job) -> Path:
+    return OUTPUT_DIR / _sanitize_output_title(job.job_id)
+
+
 def _write_markdown_output(job: Job, parsed_document: Any) -> Path:
     markdown = parsed_document.get_markdown()
-    output_dir = OUTPUT_DIR / _sanitize_output_title(job.job_id)
+    output_dir = _job_output_dir(job)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / output_file_name(job, parsed_document)
     path.write_text(markdown, encoding="utf-8")
     return path
+
+
+def _chunk_output_file_name(chunk: DocumentChunk, index: int, width: int) -> str:
+    chunk_id = _sanitize_output_title(chunk.chunk_id)
+    return f"{index:0{width}d}-{chunk_id}.json"
+
+
+def _write_chunk_outputs(job: Job, chunks: list[DocumentChunk]) -> Path:
+    chunks_dir = _job_output_dir(job) / "chunks"
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+    width = max(4, len(str(len(chunks))))
+
+    for index, chunk in enumerate(chunks, start=1):
+        path = chunks_dir / _chunk_output_file_name(chunk, index, width)
+        payload = chunk.model_dump(exclude_none=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    return chunks_dir
 
 
 def _serializable_job_error(exc: Exception) -> RuntimeError:
@@ -142,8 +169,9 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         progress.record_timing("dispatch", perf_counter() - stage_started_at)
 
         current_stage = JobStage.OUTPUTTING
-        progress.mark_stage(current_stage, "Writing markdown output.")
+        progress.mark_stage(current_stage, "Writing markdown and chunk outputs.")
         output_path = _write_markdown_output(job, parsed_document)
+        chunks_dir = _write_chunk_outputs(job, chunks)
         progress.set_output(
             file_name=output_path.name,
             path=str(output_path),
@@ -151,7 +179,12 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         )
         progress.record_timing("total", perf_counter() - job_started_at)
         progress.mark_done("Job done: chunks sent to Elasticsearch.")
-        LOGGER.info("Wrote markdown output job_id=%s output_path=%s", job.job_id, output_path)
+        LOGGER.info(
+            "Wrote disk outputs job_id=%s output_path=%s chunks_dir=%s",
+            job.job_id,
+            output_path,
+            chunks_dir,
+        )
         LOGGER.info("Finished job job_id=%s", job.job_id)
     except Exception as exc:
         serializable_error = _serializable_job_error(exc)

@@ -11,6 +11,7 @@ from model.parsed_document import ParsedDocument
 from processing.chunking.docling_chunker import (
     ChunkMarkdownTableSerializer,
     DoclingChunker,
+    MARKDOWN_SINGLE_CHUNK_MAX_TOKENS,
 )
 
 from docling_core.transforms.chunker.hierarchical_chunker import DocChunk, DocMeta
@@ -33,13 +34,23 @@ class FakeDoclingChunker:
 
     def __init__(self, chunks: list[DocChunk]) -> None:
         self._chunks = chunks
+        self.chunk_calls = 0
 
     def chunk(self, dl_doc: object) -> list[DocChunk]:
+        self.chunk_calls += 1
         return self._chunks
 
     def contextualize(self, *, chunk: DocChunk) -> str:
         headings = chunk.meta.headings or []
         return "\n".join([*headings, chunk.text])
+
+
+class FakeMarkdownDocument:
+    def __init__(self, markdown: str) -> None:
+        self._markdown = markdown
+
+    def export_to_markdown(self) -> str:
+        return self._markdown
 
 
 class ChunkMarkdownTableSerializerTest(unittest.TestCase):
@@ -197,6 +208,107 @@ class DoclingChunkerTest(unittest.TestCase):
         self.assertNotIn("metadata", chunk.model_dump())
         self.assertNotIn("title_semantic", chunk.model_dump())
         self.assertNotIn("raw_text", chunk.model_dump())
+
+    def test_chunk_uploads_small_markdown_as_single_chunk(self) -> None:
+        chunker = DoclingChunker.model_construct(
+            type="token",
+            server_config=ServerConfig(
+                app_name="test",
+                environment="test",
+                inbound_queue_name="queue",
+                worker_max_workers=1,
+                chunk_max_tokens=128,
+                tokenizer_path=Path("/tmp/tokenizer"),
+                docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+            ),
+        )
+        fake_chunker = FakeDoclingChunker([])
+        chunker._chunker = fake_chunker
+        parsed_document = ParsedDocument(
+            document_id="doc-1",
+            source_file_name="sample.md",
+            source_path="/tmp/sample.md",
+            title="Sample markdown",
+            page_count=0,
+            metadata={"docling": {"parser": "docling", "input_format": "md"}},
+            original_out_doc=AbstractOutputDocument(
+                raw=FakeMarkdownDocument("# Introduction\n\nSmall markdown body")
+            ),
+        )
+
+        chunks = chunker.chunk(parsed_document, NullProgressReporter())
+
+        self.assertEqual(0, fake_chunker.chunk_calls)
+        self.assertEqual(1, len(chunks))
+        chunk = chunks[0]
+        self.assertEqual("# Introduction\n\nSmall markdown body", chunk.content)
+        self.assertEqual(5, chunk.content_token_count)
+        self.assertEqual([], chunk.doc_items)
+        self.assertIsNone(chunk.page_number)
+        self.assertEqual([], chunk.page_numbers)
+        self.assertEqual(0, chunk.total_pages)
+        self.assertEqual(["Introduction"], chunk.headings)
+        self.assertEqual("sample.md", chunk.source_file_name)
+
+    def test_chunk_uses_docling_chunker_for_large_markdown_without_pages(self) -> None:
+        item = TextItem(
+            self_ref="#/texts/0",
+            label=DocItemLabel.TEXT,
+            prov=[],
+            orig="markdown body",
+            text="markdown body",
+        )
+        doc_chunk = DocChunk(
+            text="markdown body",
+            meta=DocMeta(
+                doc_items=[item],
+                headings=["Introduction"],
+            ),
+        )
+        chunker = DoclingChunker.model_construct(
+            type="token",
+            server_config=ServerConfig(
+                app_name="test",
+                environment="test",
+                inbound_queue_name="queue",
+                worker_max_workers=1,
+                chunk_max_tokens=128,
+                tokenizer_path=Path("/tmp/tokenizer"),
+                docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+            ),
+        )
+        fake_chunker = FakeDoclingChunker([doc_chunk])
+        chunker._chunker = fake_chunker
+        parsed_document = ParsedDocument(
+            document_id="doc-1",
+            source_file_name="sample.md",
+            source_path="/tmp/sample.md",
+            title="Sample markdown",
+            page_count=0,
+            metadata={"docling": {"parser": "docling", "input_format": "md"}},
+            original_out_doc=AbstractOutputDocument(
+                raw=FakeMarkdownDocument(
+                    "# Introduction\n\n"
+                    + "word " * (MARKDOWN_SINGLE_CHUNK_MAX_TOKENS + 1)
+                )
+            ),
+        )
+
+        chunks = chunker.chunk(parsed_document, NullProgressReporter())
+
+        self.assertEqual(1, fake_chunker.chunk_calls)
+        self.assertEqual(1, len(chunks))
+        chunk = chunks[0]
+        self.assertEqual("Introduction\nmarkdown body", chunk.content)
+        self.assertEqual(["#/texts/0"], chunk.doc_items)
+        self.assertIsNone(chunk.page_number)
+        self.assertEqual([], chunk.page_numbers)
+        self.assertEqual(0, chunk.total_pages)
+        self.assertEqual("Sample markdown", chunk.clean_title)
+        self.assertEqual(["Introduction"], chunk.headings)
+        self.assertEqual("sample.md", chunk.source_file_name)
 
 
 if __name__ == "__main__":

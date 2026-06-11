@@ -24,6 +24,9 @@ from processing.base_chunker import AbstractChunker
 
 _DECIMAL_NUMBER_RE = re.compile(r"\d+(?:\.\d{3})*,\d+")
 _INTEGER_RE = re.compile(r"\d+")
+_MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
+MARKDOWN_SINGLE_CHUNK_MAX_TOKENS = 16_000
+_MARKDOWN_INPUT_FORMATS = {"md", "markdown"}
 
 
 def _docling_chunk_refs(chunk: DocChunk) -> tuple[list[str], list[int]]:
@@ -48,6 +51,41 @@ def _docling_chunk_headings(chunk: DocChunk) -> list[str]:
         seen.add(value)
         normalized_headings.append(value)
     return normalized_headings
+
+
+def _markdown_headings(markdown: str) -> list[str]:
+    headings = []
+    seen = set()
+    for line in markdown.splitlines():
+        match = _MARKDOWN_HEADING_RE.match(line)
+        if not match:
+            continue
+        heading = " ".join(match.group(1).split()).strip()
+        if not heading or heading in seen:
+            continue
+        seen.add(heading)
+        headings.append(heading)
+    return headings
+
+
+def _docling_metadata(document: ParsedDocument) -> dict[str, Any]:
+    metadata = document.metadata.get("docling", {})
+    if isinstance(metadata, dict):
+        return metadata
+    return {}
+
+
+def _is_markdown_like_unpaged_document(document: ParsedDocument) -> bool:
+    if document.page_count > 0:
+        return False
+
+    metadata = _docling_metadata(document)
+    input_format = str(metadata.get("input_format") or "").lower()
+    preprocessed_format = str(metadata.get("preprocessed_format") or "").lower()
+    return (
+        input_format in _MARKDOWN_INPUT_FORMATS
+        or preprocessed_format in _MARKDOWN_INPUT_FORMATS
+    )
 
 
 def _markdown_table_cells(line: str) -> list[str]:
@@ -182,6 +220,10 @@ class DoclingChunker(AbstractChunker):
         return chunks
 
     def _docling_chunks(self, document: ParsedDocument) -> list[DocumentChunk]:
+        single_chunk = self._markdown_single_chunk_if_small(document)
+        if single_chunk is not None:
+            return single_chunk
+
         chunks: list[DocumentChunk] = []
         for chunk in self._chunker.chunk(dl_doc=document.original_out_doc.raw):
             doc_chunk = DocChunk.model_validate(chunk)
@@ -205,6 +247,42 @@ class DoclingChunker(AbstractChunker):
                 )
             )
         return chunks
+
+    def _markdown_single_chunk_if_small(
+        self,
+        document: ParsedDocument,
+    ) -> list[DocumentChunk] | None:
+        if not _is_markdown_like_unpaged_document(document):
+            return None
+
+        content = self._markdown_content(document)
+        if not content:
+            return []
+
+        content_token_count = self._count_tokens(content)
+        if (
+            content_token_count is None
+            or content_token_count > MARKDOWN_SINGLE_CHUNK_MAX_TOKENS
+        ):
+            return None
+
+        return [
+            self._document_chunk(
+                document=document,
+                chunk_index=0,
+                content=content,
+                content_token_count=content_token_count,
+                doc_items=[],
+                page_numbers=[],
+                headings=_markdown_headings(content),
+            )
+        ]
+
+    @staticmethod
+    def _markdown_content(document: ParsedDocument) -> str:
+        if document.markdown.strip():
+            return document.markdown.strip()
+        return document.get_markdown().strip()
 
     @staticmethod
     def _chunk_text(chunk: DocChunk) -> str:

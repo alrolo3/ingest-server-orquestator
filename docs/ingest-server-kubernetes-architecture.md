@@ -275,9 +275,9 @@ The target RAG index is `open-rag-embeddings-v4`.
 | Mapping field | Purpose |
 | --- | --- |
 | `content` | `semantic_text` field with inference ID `openai-text_embedding-qwen3-embedding-4b` |
-| `content_sparse` | Chunk content indexed as sparse `semantic_text` with inference ID `opensearch-multilingual-neural-sparse` |
-| `clean_title` | Sanitized title indexed as sparse `semantic_text` with inference ID `opensearch-multilingual-neural-sparse` |
-| `headings` | Docling heading hierarchy indexed as sparse `semantic_text` with inference ID `opensearch-multilingual-neural-sparse` |
+| `content_sparse` | Chunk content indexed as sparse `semantic_text` with inference ID `spanish-splade-v3-strong_search` |
+| `clean_title` | Sanitized title indexed as sparse `semantic_text` with inference ID `spanish-splade-v3-strong_search` |
+| `headings` | Docling heading hierarchy indexed as sparse `semantic_text` with inference ID `spanish-splade-v3-strong_search` |
 | `content_lex.en` | English BM25 field |
 | `content_lex.es` | Spanish BM25 field |
 | `content_lex.fr` | French BM25 field |

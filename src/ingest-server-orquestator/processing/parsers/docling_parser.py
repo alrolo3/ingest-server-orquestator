@@ -13,6 +13,7 @@ from docling.datamodel.chart_extraction_options import ChartExtractionModelOptio
 from docling.datamodel import settings as docling_settings
 from docling.datamodel.pipeline_options import (
     CodeFormulaVlmOptions,
+    ConvertPipelineOptions,
     EasyOcrOptions,
     OcrAutoOptions,
     PictureDescriptionApiOptions,
@@ -21,7 +22,12 @@ from docling.datamodel.pipeline_options import (
     TableStructureOptions,
     ThreadedPdfPipelineOptions,
 )
-from docling.document_converter import PdfFormatOption, DocumentConverter
+from docling.document_converter import (
+    DocumentConverter,
+    MarkdownBackendOptions,
+    MarkdownFormatOption,
+    PdfFormatOption,
+)
 from docling_core.types.doc.document import DocItemLabel, DoclingDocument
 from docling_pp_doc_layout.options import PPDocLayoutV3Options
 from pydantic import AnyUrl
@@ -36,9 +42,58 @@ from processing.parsers.docling_progress import (
     ProgressReportingStandardPdfPipeline,
     docling_progress,
 )
+from processing.parsers.json_markdown import JsonToMarkdownPreprocessor
 from processing.parsers.mineru_ocr_model import MinerUOcrOptions
 from processing.parsers.surya_ocr_model import SuryaOcrOptions
 from queues.domain.job import Job
+
+
+_JSON_INPUT_FORMAT = "json"
+_PDF_MIME_TYPES = {"application/pdf"}
+_PDF_SUFFIXES = {".pdf"}
+_JSON_MIME_TYPES = {"application/json", "text/json"}
+_JSON_SUFFIXES = {".json"}
+_MARKDOWN_MIME_TYPES = {"text/markdown", "text/x-markdown"}
+_MARKDOWN_SUFFIXES = {".md", ".markdown"}
+
+
+def _normalized_mime_type(mime_type: str | None) -> str:
+    return str(mime_type or "").split(";", 1)[0].strip().lower()
+
+
+def _is_json_mime_type(mime_type: str) -> bool:
+    return mime_type in _JSON_MIME_TYPES or mime_type.endswith("+json")
+
+
+def _docling_input_format(source_path: Path, mime_type: str | None) -> InputFormat | str:
+    suffix = source_path.suffix.lower()
+    normalized_mime_type = _normalized_mime_type(mime_type)
+
+    if suffix in _JSON_SUFFIXES or _is_json_mime_type(normalized_mime_type):
+        return _JSON_INPUT_FORMAT
+    if suffix in _MARKDOWN_SUFFIXES or normalized_mime_type in _MARKDOWN_MIME_TYPES:
+        return InputFormat.MD
+    if suffix in _PDF_SUFFIXES or normalized_mime_type in _PDF_MIME_TYPES:
+        return InputFormat.PDF
+
+    raise ValueError(
+        "Unsupported document format for Docling parser: "
+        f"path={source_path.name} mime_type={mime_type or 'unknown'}"
+    )
+
+
+def _input_format_value(input_format: InputFormat | str) -> str:
+    if isinstance(input_format, InputFormat):
+        return input_format.value
+    return input_format
+
+
+def _default_mime_type(input_format: InputFormat | str) -> str:
+    if input_format == _JSON_INPUT_FORMAT:
+        return "application/json"
+    if input_format == InputFormat.MD:
+        return "text/markdown"
+    return "application/pdf"
 
 
 def _document_title(
@@ -183,6 +238,26 @@ def _record_docling_timings(
             progress.record_timing(f"docling_{name}", seconds)
 
 
+def _markdown_format_option() -> MarkdownFormatOption:
+    return MarkdownFormatOption(
+        pipeline_options=ConvertPipelineOptions(
+            artifacts_path=None,
+            enable_remote_services=False,
+            allow_external_plugins=False,
+        ),
+        backend_options=MarkdownBackendOptions(
+            enable_remote_fetch=False,
+            enable_local_fetch=False,
+            fetch_images=False,
+        )
+    )
+
+
+def _json_markdown_title(source_file_name: str, source_path: Path) -> str:
+    title = Path(source_file_name.replace("\\", "/")).stem
+    return title or source_path.stem or "JSON document"
+
+
 class DoclingParser(AbstractParser):
     """Parser implementation backed by Docling."""
 
@@ -192,7 +267,12 @@ class DoclingParser(AbstractParser):
 
         source_path = _job_source_path(job)
         source_file_name = str(job.input_data.get("file_name") or source_path.name)
-        mime_type = str(job.input_data.get("mime_type") or "application/pdf")
+        raw_mime_type = job.input_data.get("mime_type")
+        input_format = _docling_input_format(
+            source_path,
+            str(raw_mime_type or ""),
+        )
+        mime_type = str(raw_mime_type or _default_mime_type(input_format))
 
         #Sacar las options del job o de la app
 
@@ -305,29 +385,54 @@ class DoclingParser(AbstractParser):
             pipeline_options=threaded_pipeline_options,
             pipeline_cls=ProgressReportingStandardPdfPipeline)
 
+        format_options = {
+            InputFormat.PDF: options,
+            InputFormat.MD: _markdown_format_option(),
+        }
         converter = DocumentConverter(
-            allowed_formats=[InputFormat.PDF],
-            format_options={InputFormat.PDF: options})
+            allowed_formats=[InputFormat.PDF, InputFormat.MD],
+            format_options=format_options)
 
         print("Starting conversion...")
 
         old_profile_pipeline_timings = (
             docling_settings.settings.debug.profile_pipeline_timings
         )
+        old_artifacts_path = docling_settings.settings.artifacts_path
         docling_settings.settings.debug.profile_pipeline_timings = True
+        if input_format in (InputFormat.MD, _JSON_INPUT_FORMAT):
+            docling_settings.settings.artifacts_path = None
         with docling_progress(progress):
             try:
-                conversion_result = converter.convert(source_path)
+                if input_format == _JSON_INPUT_FORMAT:
+                    markdown = JsonToMarkdownPreprocessor().from_file(
+                        source_path,
+                        title=_json_markdown_title(source_file_name, source_path),
+                    )
+                    conversion_result = converter.convert_string(
+                        markdown,
+                        format=InputFormat.MD,
+                        name=Path(source_file_name).stem or source_path.stem,
+                    )
+                else:
+                    conversion_result = converter.convert(source_path)
             finally:
                 docling_settings.settings.debug.profile_pipeline_timings = (
                     old_profile_pipeline_timings
                 )
+                docling_settings.settings.artifacts_path = old_artifacts_path
 
         _record_docling_timings(
             progress,
             dict(getattr(conversion_result, "timings", {}) or {}),
         )
         doc = conversion_result.document
+        docling_metadata = {
+            "parser": "docling",
+            "input_format": _input_format_value(input_format),
+        }
+        if input_format == _JSON_INPUT_FORMAT:
+            docling_metadata["preprocessed_format"] = InputFormat.MD.value
 
         parsed_document = ParsedDocument(
             document_id=job.job_id,
@@ -339,6 +444,9 @@ class DoclingParser(AbstractParser):
             #markdown=doc.export_to_markdown(),
             #text=doc.export_to_text(),
             original_out_doc=DoclingOutputDocument(raw=doc),
+            metadata={
+                "docling": docling_metadata,
+            },
         )
         progress.set_total_pages(parsed_document.page_count)
 

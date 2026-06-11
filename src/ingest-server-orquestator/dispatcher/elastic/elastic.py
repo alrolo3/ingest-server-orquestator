@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
@@ -15,8 +17,11 @@ if TYPE_CHECKING:
 
 LANGUAGE_DETECTION_MODEL = "lang_ident_model_1"
 DEFAULT_LEXICAL_LANGUAGE = "en"
-SPARSE_SEMANTIC_INFERENCE_ID = "opensearch-multilingual-neural-sparse"
+SPARSE_SEMANTIC_INFERENCE_ID = "spanish-splade-v3-strong_search"
 SPARSE_SEMANTIC_TASK_TYPE = "sparse_embedding"
+RETRYABLE_BULK_ITEM_STATUSES = {429, 500, 502, 503, 504}
+MAX_BULK_ITEM_RETRY_DELAY_SECONDS = 30
+LOGGER = logging.getLogger(__name__)
 
 MODEL_SETTINGS = {
     "service": "custom",
@@ -525,45 +530,96 @@ class ElasticsearchDispatch(AbstractDispatcher):
 
         for start in range(0, len(chunks), self.bulk_batch_size):
             batch = chunks[start : start + self.bulk_batch_size]
-            operations = []
-            for chunk in batch:
-                operations.append(
-                    {
-                        "index": {
-                            "_index": self.index_name,
-                            "_id": chunk.chunk_id,
-                        }
-                    }
+            retry_batch = batch
+            retry_count = 0
+
+            while retry_batch:
+                operations = self._bulk_operations(retry_batch)
+                response = self._client.options(
+                    request_timeout=self.bulk_request_timeout_seconds,
+                    max_retries=self.bulk_max_retries,
+                    retry_on_timeout=True,
+                    retry_on_status=(429, 500, 502, 503, 504),
+                ).bulk(
+                    operations=operations,
+                    pipeline=self.pipeline_name,
+                    refresh="wait_for",
+                    timeout=self.bulk_api_timeout,
+                    wait_for_active_shards="1",
                 )
-                operations.append(chunk.model_dump(exclude_none=True))
 
-            response = self._client.options(
-                request_timeout=self.bulk_request_timeout_seconds,
-                max_retries=self.bulk_max_retries,
-                retry_on_timeout=True,
-                retry_on_status=(429, 502, 503, 504),
-            ).bulk(
-                operations=operations,
-                pipeline=self.pipeline_name,
-                refresh="wait_for",
-                timeout=self.bulk_api_timeout,
-                wait_for_active_shards="1",
+                response_body = getattr(response, "body", response)
+                failed_items = self._failed_bulk_items(response_body)
+                if not failed_items:
+                    break
+
+                retry_ids = self._retryable_failed_item_ids(failed_items)
+                if (
+                    len(retry_ids) != len(failed_items)
+                    or retry_count >= self.bulk_max_retries
+                ):
+                    raise RuntimeError(
+                        "Elasticsearch bulk chunk dispatch failed for "
+                        f"{len(failed_items)} item(s): {failed_items[:3]}"
+                    )
+
+                retry_count += 1
+                LOGGER.warning(
+                    "Retrying %s transient Elasticsearch bulk item failure(s) "
+                    "attempt=%s/%s",
+                    len(retry_ids),
+                    retry_count,
+                    self.bulk_max_retries,
+                )
+                time.sleep(self._bulk_item_retry_delay_seconds(retry_count))
+                next_retry_batch = [
+                    chunk for chunk in retry_batch if chunk.chunk_id in retry_ids
+                ]
+                if len(next_retry_batch) != len(retry_ids):
+                    raise RuntimeError(
+                        "Elasticsearch bulk chunk dispatch failed for "
+                        f"{len(failed_items)} item(s): {failed_items[:3]}"
+                    )
+                retry_batch = next_retry_batch
+
+    def _bulk_operations(self, chunks: list[DocumentChunk]) -> list[dict[str, Any]]:
+        operations = []
+        for chunk in chunks:
+            operations.append(
+                {
+                    "index": {
+                        "_index": self.index_name,
+                        "_id": chunk.chunk_id,
+                    }
+                }
             )
+            operations.append(chunk.model_dump(exclude_none=True))
+        return operations
 
-            response_body = getattr(response, "body", response)
-            if not response_body.get("errors", False):
-                continue
+    @staticmethod
+    def _failed_bulk_items(response_body: dict[str, Any]) -> list[dict[str, Any]]:
+        if not response_body.get("errors", False):
+            return []
+        return [
+            operation
+            for item in response_body.get("items", [])
+            for operation in item.values()
+            if operation.get("error") is not None
+        ]
 
-            failed_items = [
-                operation
-                for item in response_body.get("items", [])
-                for operation in item.values()
-                if operation.get("error") is not None
-            ]
-            raise RuntimeError(
-                "Elasticsearch bulk chunk dispatch failed for "
-                f"{len(failed_items)} item(s): {failed_items[:3]}"
-            )
+    @staticmethod
+    def _retryable_failed_item_ids(failed_items: list[dict[str, Any]]) -> set[str]:
+        retry_ids = set()
+        for item in failed_items:
+            status = item.get("status")
+            item_id = item.get("_id")
+            if status in RETRYABLE_BULK_ITEM_STATUSES and isinstance(item_id, str):
+                retry_ids.add(item_id)
+        return retry_ids
+
+    @staticmethod
+    def _bulk_item_retry_delay_seconds(retry_count: int) -> int:
+        return min(2 ** (retry_count - 1), MAX_BULK_ITEM_RETRY_DELAY_SECONDS)
 
     def dispatch_markdown(self, markdown: str) -> None:
         raise NotImplementedError

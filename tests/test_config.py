@@ -307,7 +307,7 @@ class ServerConfigTest(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "inference_id": "opensearch-multilingual-neural-sparse",
+                "inference_id": "spanish-splade-v3-strong_search",
                 "task_type": "sparse_embedding",
             },
             mappings["_meta"]["sparse_semantic_inference"],
@@ -316,7 +316,7 @@ class ServerConfigTest(unittest.TestCase):
             field_mapping = mappings["properties"][field_name]
             self.assertEqual("semantic_text", field_mapping["type"])
             self.assertEqual(
-                "opensearch-multilingual-neural-sparse",
+                "spanish-splade-v3-strong_search",
                 field_mapping["inference_id"],
             )
             self.assertEqual({"strategy": "none"}, field_mapping["chunking_settings"])

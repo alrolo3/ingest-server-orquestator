@@ -1,11 +1,13 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestator"
 sys.path.insert(0, str(SRC_DIR))
 
 from dispatcher.elastic.elastic import ElasticsearchDispatch, OPEN_RAG_PIPELINE
+from model.document_chunk import DocumentChunk
 
 
 class FakeIndices:
@@ -23,6 +25,64 @@ class FakeIndices:
 class FakeClient:
     def __init__(self, mapping: dict[str, object]) -> None:
         self.indices = FakeIndices(mapping)
+
+
+class FakeBulkClient:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self.responses = responses
+        self.bulk_chunk_ids: list[list[str]] = []
+        self.options_calls: list[dict[str, object]] = []
+
+    def options(self, **kwargs: object) -> "FakeBulkClient":
+        self.options_calls.append(kwargs)
+        return self
+
+    def bulk(self, *, operations: list[dict[str, object]], **kwargs: object) -> object:
+        self.bulk_chunk_ids.append(
+            [
+                operation["index"]["_id"]
+                for operation in operations
+                if "index" in operation
+            ]
+        )
+        return self.responses.pop(0)
+
+
+def _chunk(chunk_id: str, chunk_index: int = 0) -> DocumentChunk:
+    return DocumentChunk(
+        content="body",
+        content_sparse="body",
+        document_id="doc-1",
+        chunk_id=chunk_id,
+        chunk_index=chunk_index,
+        chunking_strategy="token",
+        source_file_name="source.pdf",
+    )
+
+
+def _bulk_response(*items: dict[str, object]) -> dict[str, object]:
+    return {
+        "errors": any("error" in item for item in items),
+        "items": [{"index": item} for item in items],
+    }
+
+
+def _dispatch_with_bulk_client(
+    responses: list[dict[str, object]],
+    *,
+    bulk_max_retries: int = 2,
+) -> tuple[ElasticsearchDispatch, FakeBulkClient]:
+    dispatch = ElasticsearchDispatch.model_construct(
+        index_name="rag-index",
+        pipeline_name="rag-pipeline",
+        bulk_api_timeout="1m",
+        bulk_request_timeout_seconds=30,
+        bulk_batch_size=10,
+        bulk_max_retries=bulk_max_retries,
+    )
+    client = FakeBulkClient(responses)
+    dispatch._client = client
+    return dispatch, client
 
 
 class ElasticsearchDispatchTest(unittest.TestCase):
@@ -76,7 +136,7 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         for mapping in calls[0]["properties"].values():
             self.assertEqual("semantic_text", mapping["type"])
             self.assertEqual(
-                "opensearch-multilingual-neural-sparse",
+                "spanish-splade-v3-strong_search",
                 mapping["inference_id"],
             )
             self.assertEqual({"strategy": "none"}, mapping["chunking_settings"])
@@ -163,6 +223,93 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         self.assertIn("title_sparse", remove_fields)
         self.assertIn("raw_text", remove_fields)
         self.assertIn("raw_data", remove_fields)
+
+    def test_dispatch_chunks_retries_only_transient_failed_bulk_items(self) -> None:
+        dispatch, client = _dispatch_with_bulk_client(
+            [
+                _bulk_response(
+                    {"_id": "chunk-1", "status": 201},
+                    {
+                        "_id": "chunk-2",
+                        "status": 500,
+                        "error": {
+                            "type": "inference_exception",
+                            "reason": "node disconnected",
+                        },
+                    },
+                ),
+                _bulk_response({"_id": "chunk-2", "status": 201}),
+            ]
+        )
+
+        with patch("dispatcher.elastic.elastic.time.sleep") as sleep:
+            dispatch.dispatch_chunks([_chunk("chunk-1"), _chunk("chunk-2", 1)])
+
+        self.assertEqual([["chunk-1", "chunk-2"], ["chunk-2"]], client.bulk_chunk_ids)
+        sleep.assert_called_once_with(1)
+
+    def test_dispatch_chunks_does_not_retry_permanent_bulk_item_errors(self) -> None:
+        dispatch, client = _dispatch_with_bulk_client(
+            [
+                _bulk_response(
+                    {
+                        "_id": "chunk-1",
+                        "status": 400,
+                        "error": {
+                            "type": "mapper_parsing_exception",
+                            "reason": "bad document",
+                        },
+                    }
+                )
+            ]
+        )
+
+        with patch("dispatcher.elastic.elastic.time.sleep") as sleep:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Elasticsearch bulk chunk dispatch failed for 1 item",
+            ):
+                dispatch.dispatch_chunks([_chunk("chunk-1")])
+
+        self.assertEqual([["chunk-1"]], client.bulk_chunk_ids)
+        sleep.assert_not_called()
+
+    def test_dispatch_chunks_fails_after_transient_bulk_retry_budget(self) -> None:
+        dispatch, client = _dispatch_with_bulk_client(
+            [
+                _bulk_response(
+                    {
+                        "_id": "chunk-1",
+                        "status": 500,
+                        "error": {
+                            "type": "inference_exception",
+                            "reason": "node disconnected",
+                        },
+                    }
+                ),
+                _bulk_response(
+                    {
+                        "_id": "chunk-1",
+                        "status": 500,
+                        "error": {
+                            "type": "inference_exception",
+                            "reason": "node disconnected",
+                        },
+                    }
+                ),
+            ],
+            bulk_max_retries=1,
+        )
+
+        with patch("dispatcher.elastic.elastic.time.sleep") as sleep:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Elasticsearch bulk chunk dispatch failed for 1 item",
+            ):
+                dispatch.dispatch_chunks([_chunk("chunk-1")])
+
+        self.assertEqual([["chunk-1"], ["chunk-1"]], client.bulk_chunk_ids)
+        sleep.assert_called_once_with(1)
 
 
 if __name__ == "__main__":
