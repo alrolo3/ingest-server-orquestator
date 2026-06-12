@@ -6,3 +6,5 @@ __pycache__/
 hf_token
 src/Hands_On_Red_Team_Tactics___A_practical.pdf
 .agents/
+/ingest-server-orquestator_latest.tar
+/ingest-server-orquestator_latest.tar.gz
