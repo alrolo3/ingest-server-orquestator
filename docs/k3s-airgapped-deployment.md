@@ -120,11 +120,14 @@ kubectl rollout status deployment/ingest-server
 ```
 
 If you import a new build using the same `ingest-server-orquestator:latest` tag,
-restart the deployment so k3s creates a new pod from the newly imported image:
+restart both deployments so k3s creates new pods from the newly imported images:
 
 ```bash
+kubectl apply -f k8s/ingest-server.yaml
 kubectl rollout restart deployment/ingest-server
+kubectl rollout restart deployment/ingest-frontend
 kubectl rollout status deployment/ingest-server
+kubectl rollout status deployment/ingest-frontend
 ```
 
 The API application listens on port `8000`, and the API service is `ClusterIP`
@@ -151,7 +154,14 @@ The NVIDIA-compatible frontend upload and status endpoints are `/api/documents`
 and `/api/status`. The legacy direct ingest endpoints remain available as
 `/api/v1/ingest/file` and `/api/v1/ingest/jobs`.
 
-For local access without exposing the API service, port-forward only the frontend:
+The same manifest also creates/updates Traefik routing for the public upload UI.
+The existing DNS/TLS hostname is retained and now serves the React app:
+
+```text
+https://gradio.simona.local -> IngressRoute/simona-apps-ingressroute -> Service/ingest-frontend:3000
+```
+
+For local access without using Traefik, port-forward only the frontend:
 
 ```bash
 kubectl port-forward svc/ingest-frontend 3000:3000

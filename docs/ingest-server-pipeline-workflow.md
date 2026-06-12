@@ -6,7 +6,7 @@ This document describes the full runtime path from a user uploading a file in th
 
 ## End-To-End Summary
 
-1. A user opens the React frontend through Traefik and uploads one or more files.
+1. A user opens `https://gradio.simona.local`, which Traefik now routes to the React frontend, and uploads one or more files.
 2. The frontend posts selected files to the internal ingest API at `http://ingest-server.default.svc.cluster.local:8000/api/documents?blocking=false` using NVIDIA RAG frontend-compatible multipart fields.
 3. The FastAPI ingest server writes the uploaded file to `/uploads`, creates a `Job`, records in-memory metrics, and enqueues the job in a process-local queue.
 4. The API process already has an `InboundWorker` thread running. It dequeues jobs and starts a spawned worker process with `ProcessPoolExecutor`.
@@ -24,7 +24,7 @@ This document describes the full runtime path from a user uploading a file in th
 ```mermaid
 sequenceDiagram
     actor User
-    participant Traefik as Traefik frontend host
+    participant Traefik as Traefik gradio.simona.local
     participant Frontend as ingest-frontend React UI
     participant API as ingest-server FastAPI
     participant PVC as ingest-data-pvc uploads outputs
@@ -38,7 +38,7 @@ sequenceDiagram
     participant VLLMEmb as vLLM Qwen3-Embedding-4B
 
     User->>Traefik: Upload file in browser
-    Traefik->>Frontend: Route to Service ingest-frontend:3000
+    Traefik->>Frontend: Route gradio.simona.local to Service ingest-frontend:3000
     Frontend->>API: POST /api/documents multipart documents[] data={collection_name}
     API->>PVC: Save uploaded file under /uploads with UUID prefix
     API->>Queue: Create Job and metrics record
@@ -66,6 +66,7 @@ The React frontend is implemented in `frontend/` and is based on the NVIDIA RAG 
 | Runtime config | Live value |
 | --- | --- |
 | `INGEST_API_URL` | `http://ingest-server.default.svc.cluster.local:8000` |
+| Public frontend host | `https://gradio.simona.local` |
 | Frontend upload endpoint | `/api/documents?blocking=false` |
 | Frontend task endpoint | `/api/status?task_id=<task_id>` |
 | Frontend collections endpoint | `/api/collections` |
@@ -427,5 +428,5 @@ The agent instruction requires:
 - `INGEST_WORKER_MAX_WORKERS=1` serializes processing, which reduces GPU contention for Docling OCR and model calls.
 - The RAG workflow stored in Elasticsearch is the runtime source of truth. The checked-in `elastic_integration/rag-workflow.yml` may lag the live workflow.
 - `vllm-bge-m3` is scaled to zero. The LiteLLM model `bge-m3-pooling` will not work until that deployment has endpoints.
-- No live Kubernetes `NetworkPolicy` resources are currently applied, even though the repo contains a frontend-to-ingest NetworkPolicy manifest.
+- The checked-in Kubernetes manifest defines the React frontend Service, Traefik `simona-apps-ingressroute`, Linkerd destination middlewares, and frontend/API NetworkPolicies. Apply `k8s/ingest-server.yaml` to route `gradio.simona.local` to `ingest-frontend:3000`.
 - Secret-backed values such as `ELASTIC_API_KEY` are required at runtime but are intentionally not included in this document.

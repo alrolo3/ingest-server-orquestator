@@ -72,7 +72,7 @@ flowchart LR
         litellmPods --> vllmRerank
     end
 
-    route -->|frontend host| frontendSvc
+    route -->|gradio.simona.local| frontendSvc
     route -->|inference.simona.local| litellmSvc
     route -->|kibana.simona.local| kbSvc
 
@@ -111,7 +111,7 @@ The active `IngressRoute/default/simona-apps-ingressroute` uses entrypoint `webs
 | Host | Backend service | Backend port | Notes |
 | --- | --- | --- | --- |
 | `inference.simona.local` | `inference-service` | `4000` | LiteLLM proxy for chat, embeddings, and rerank APIs |
-| Frontend host | `ingest-frontend` | `3000` | NVIDIA RAG React file upload and collection UI |
+| `gradio.simona.local` | `ingest-frontend` | `3000` | Existing public upload hostname now serves the NVIDIA RAG React frontend |
 | `kibana.simona.local` | `quickstart-kb-http` | `5601` | HTTPS to ECK Kibana, Traefik `ServersTransport` skips upstream cert verification |
 | `openwebui.simona.local` | `openwebui-service` | `8080` | Route exists, but no matching Service is present in the live namespace |
 
@@ -144,7 +144,7 @@ cert-manager status:
 | Service | `ingest-frontend:3000` |
 | Backend URL | `http://ingest-server.default.svc.cluster.local:8000` |
 
-The React app is based on the NVIDIA RAG Blueprint frontend. It posts multipart uploads to `/api/documents?blocking=false`, polls `/api/status`, reads `/api/collections` and `/api/documents`, and uses `/api/health` plus `/api/configuration` for app status and defaults. The legacy `/api/v1/ingest/file` and `/api/v1/ingest/jobs` endpoints remain available for direct API clients.
+The React app is based on the NVIDIA RAG Blueprint frontend. Traefik keeps the existing `gradio.simona.local` DNS/TLS hostname for compatibility, but the backend service is now `ingest-frontend:3000`. The app posts multipart uploads to `/api/documents?blocking=false`, polls `/api/status`, reads `/api/collections` and `/api/documents`, and uses `/api/health` plus `/api/configuration` for app status and defaults. The legacy `/api/v1/ingest/file` and `/api/v1/ingest/jobs` endpoints remain available for direct API clients.
 
 ### Ingest API And Worker
 
@@ -320,6 +320,6 @@ PersistentVolume reclaim policies observed:
 
 - `openwebui.simona.local` is routed in the IngressRoute, but `openwebui-service` is not present in the live `default` namespace.
 - `vllm-bge-m3` is configured in LiteLLM, but the deployment is scaled to zero, so `bge-m3-pooling` has no backing endpoint until that deployment is scaled up.
-- `kubectl get networkpolicy -A` returned no live NetworkPolicy resources. The checked-in `k8s/ingest-server.yaml` contains a frontend-to-ingest NetworkPolicy, but it is not currently applied.
+- The checked-in `k8s/ingest-server.yaml` defines the frontend deployment, service, Traefik `simona-apps-ingressroute`, Linkerd destination middlewares, and frontend/API NetworkPolicies. Apply it to route `gradio.simona.local` to `ingest-frontend:3000`.
 - The live `ingest-server-config` differs from older checked-in manifest defaults. The live cluster points ingest traffic to ECK Elasticsearch and LiteLLM service DNS names.
-- Internal ECK HTTP services use TLS. The Traefik `kibana-eck-transport` currently sets `insecureSkipVerify: true` for the Kibana upstream certificate.
+- Internal ECK HTTP services use TLS. The checked-in Traefik `quickstart-kibana-skipverify` `ServersTransport` sets `insecureSkipVerify: true` for the Kibana upstream certificate.
