@@ -155,6 +155,10 @@ export default function NewCollectionButtons() {
     if (!collectionName.trim() && collectionNameTouched) {
       return "Please enter a collection name";
     }
+
+    if (!selectedFiles.length && (collectionName.trim() || collectionNameTouched)) {
+      return "Select at least one document";
+    }
     
     if (hasInvalidFiles) {
       return "Please remove or fix invalid files before creating the collection";
@@ -259,7 +263,7 @@ export default function NewCollectionButtons() {
           <Notification
             status="error"
             slotHeading="Validation Error"
-            slotSubheading={nameError || validationMessage || error}
+            slotSubheading={nameError || error || validationMessage}
             data-testid="error-message"
           />
         </Block>
@@ -292,13 +296,13 @@ export default function NewCollectionButtons() {
           <Button
             color="brand"
             kind={isLoading ? "tertiary" : "primary"}
-            disabled={!collectionName.trim() || hasMissingRequired || hasInvalidFiles || isLoading || !!nameError}
+            disabled={!collectionName.trim() || selectedFiles.length === 0 || hasMissingRequired || hasInvalidFiles || isLoading || !!nameError}
             onClick={handleSubmit}
             data-testid="create-button"
             size={isMobile ? "medium" : "medium"}
             style={{ width: isMobile ? '100%' : 'auto' }}
           >
-            {isLoading ? <Spinner description="" size="small" /> : "Create Collection"}
+            {isLoading ? <Spinner description="" size="small" /> : "Upload Documents"}
           </Button>
         </Flex>
       </Block>

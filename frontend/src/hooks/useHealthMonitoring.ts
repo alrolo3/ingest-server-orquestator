@@ -101,7 +101,7 @@ const getCategoryContext = (category: string): string => {
     case "databases":
       return "This may affect document storage and retrieval functionality.";
     case "nim":
-      return "This may affect AI model inference and chat functionality.";
+      return "This may affect document enrichment and retrieval functionality.";
     case "processing":
       return "This may affect document ingestion and processing.";
     case "task_management":

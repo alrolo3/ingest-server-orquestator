@@ -6,14 +6,12 @@ import Header from '../Header';
 
 // Mock react-router-dom hooks
 const mockNavigate = vi.fn();
-const mockUseLocation = vi.fn();
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useLocation: () => mockUseLocation()
   };
 });
 
@@ -30,7 +28,6 @@ vi.mock('../../icons/NvidiaLogo', () => ({
 describe('Header', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseLocation.mockReturnValue({ pathname: '/' });
   });
 
   describe('Basic Rendering', () => {
@@ -46,9 +43,10 @@ describe('Header', () => {
       expect(screen.getByTestId('notification-bell')).toBeInTheDocument();
     });
 
-    it('renders settings button', () => {
+    it('does not render chat or settings actions', () => {
       render(<Header />);
-      expect(screen.getByText('Settings')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /settings/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /chat/i })).not.toBeInTheDocument();
     });
   });
 
@@ -60,34 +58,12 @@ describe('Header', () => {
       expect(screen.getByText('Ingest Server Orchestrator')).toBeInTheDocument();
     });
 
-    it('navigates to settings when on home page', () => {
-      mockUseLocation.mockReturnValue({ pathname: '/' });
+    it('navigates home when the title is clicked', () => {
       render(<Header />);
       
-      const settingsButton = screen.getByRole('button', { name: /settings/i });
-      fireEvent.click(settingsButton);
-      
-      expect(mockNavigate).toHaveBeenCalledWith('/settings');
-    });
-
-    it('navigates to home when on settings page', () => {
-      mockUseLocation.mockReturnValue({ pathname: '/settings' });
-      render(<Header />);
-      
-      const settingsButton = screen.getByRole('button', { name: /settings/i });
-      fireEvent.click(settingsButton);
+      fireEvent.click(screen.getByText('Ingest Server Orchestrator'));
       
       expect(mockNavigate).toHaveBeenCalledWith('/');
-    });
-
-    it('navigates to settings from other pages', () => {
-      mockUseLocation.mockReturnValue({ pathname: '/some-other-page' });
-      render(<Header />);
-      
-      const settingsButton = screen.getByRole('button', { name: /settings/i });
-      fireEvent.click(settingsButton);
-      
-      expect(mockNavigate).toHaveBeenCalledWith('/settings');
     });
   });
 
@@ -98,10 +74,9 @@ describe('Header', () => {
       expect(screen.getByTestId('nv-logo-element')).toBeInTheDocument();
     });
 
-    it('has clickable settings button', () => {
+    it('has no settings button', () => {
       render(<Header />);
-      const settingsButton = screen.getByRole('button', { name: /settings/i });
-      expect(settingsButton).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /settings/i })).not.toBeInTheDocument();
     });
   });
 });

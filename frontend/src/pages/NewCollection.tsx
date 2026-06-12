@@ -230,8 +230,8 @@ export default function NewCollection() {
       <GridItem cols={12}>
         <Block padding="density-lg">
           <PageHeader
-            slotHeading="Create New Collection"
-            slotSubheading="Upload source files and define metadata schema for this collection."
+            slotHeading="Upload Documents"
+            slotSubheading="Create a collection with source files and metadata."
           />
         </Block>
       </GridItem>

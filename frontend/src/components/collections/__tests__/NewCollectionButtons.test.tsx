@@ -59,11 +59,11 @@ describe('NewCollectionButtons', () => {
   });
 
   describe('Component Structure', () => {
-    it('renders cancel and create buttons', () => {
+    it('renders cancel and upload buttons', () => {
       render(<NewCollectionButtons />);
       
       expect(screen.getByText('Cancel')).toBeInTheDocument();
-      expect(screen.getByText('Create Collection')).toBeInTheDocument();
+      expect(screen.getByText('Upload Documents')).toBeInTheDocument();
     });
 
     it('renders button container with KUI components', () => {
@@ -112,7 +112,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       expect(createButton).toBeDisabled();
     });
 
@@ -131,11 +131,11 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       expect(createButton).toBeDisabled();
     });
 
-    it('is enabled when collection name is valid', () => {
+    it('is disabled when collection name is valid but no documents are selected', () => {
       mockUseNewCollectionStore.mockReturnValue({
         collectionName: 'valid_collection_name',
         collectionNameTouched: false,
@@ -150,8 +150,8 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
-      expect(createButton).not.toBeDisabled();
+      const createButton = screen.getByText('Upload Documents');
+      expect(createButton).toBeDisabled();
     });
 
     it('is disabled when loading', () => {
@@ -193,7 +193,7 @@ describe('NewCollectionButtons', () => {
       const createButton = screen.getByTestId('create-button');
       expect(createButton).toBeDisabled();
       // The button shows spinner instead of text when loading
-      expect(createButton).not.toHaveTextContent('Create Collection');
+      expect(createButton).not.toHaveTextContent('Upload Documents');
     });
   });
 
@@ -315,7 +315,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       expect(createButton).toBeDisabled();
     });
 
@@ -339,7 +339,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       expect(createButton).not.toBeDisabled();
     });
 
@@ -358,7 +358,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       expect(createButton).not.toBeDisabled();
     });
   });
@@ -370,7 +370,7 @@ describe('NewCollectionButtons', () => {
         collectionNameTouched: false,
         metadataSchema: [],
         fileMetadata: {},
-        selectedFiles: [],
+        selectedFiles: [{ name: 'file1.pdf' }],
         isLoading: false,
         hasInvalidFiles: false,
         error: null,
@@ -379,7 +379,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       fireEvent.click(createButton);
       
       expect(mockSubmit).toHaveBeenCalled();
@@ -400,7 +400,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       
       // The button should be disabled due to name validation, so clicking won't trigger setError
       expect(createButton).toBeDisabled();
@@ -422,7 +422,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       fireEvent.click(createButton);
       
       expect(mockSubmit).not.toHaveBeenCalled();
@@ -474,7 +474,7 @@ describe('NewCollectionButtons', () => {
         collectionNameTouched: false,
         metadataSchema: [],
         fileMetadata: {},
-        selectedFiles: [],
+        selectedFiles: [{ name: 'file1.pdf' }],
         isLoading: false,
         hasInvalidFiles: false,
         error: null,
@@ -483,7 +483,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      const createButton = screen.getByText('Create Collection');
+      const createButton = screen.getByText('Upload Documents');
       expect(createButton).not.toBeDisabled();
       
       fireEvent.click(createButton);
@@ -499,4 +499,4 @@ describe('NewCollectionButtons', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/');
     });
   });
-}); 
+});

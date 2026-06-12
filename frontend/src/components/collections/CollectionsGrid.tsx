@@ -4,7 +4,7 @@ import { VerticalNav, Spinner, StatusMessage, Flex } from "@kui/react";
 import { useCollections } from "../../api/useCollectionsApi";
 import type { Collection } from "../../types/collections";
 import { CollectionItem } from "./CollectionItem";
-import { useCollectionsStore } from "../../store/useCollectionsStore";
+import { useCollectionDrawerStore } from "../../store/useCollectionDrawerStore";
 import { FolderOpen } from "lucide-react";
 
 interface CollectionsGridProps {
@@ -30,7 +30,7 @@ const Wrapper = ({ children }: { children: React.ReactNode }) => {
 
 export const CollectionsGrid = ({ searchQuery }: CollectionsGridProps) => {
   const { data, isLoading, error } = useCollections();
-  const { selectedCollections, toggleCollection } = useCollectionsStore();
+  const { activeCollection, openDrawer } = useCollectionDrawerStore();
 
   const filteredCollections = (data || [])
     .filter((collection: Collection) => {
@@ -79,7 +79,7 @@ export const CollectionsGrid = ({ searchQuery }: CollectionsGridProps) => {
       <Wrapper>
         <StatusMessage
           slotHeading="No collections"
-          slotSubheading="Create your first collection and add files to customize your model response."
+          slotSubheading="Create your first collection and upload files."
           slotMedia={<FolderOpen size={32} style={{ color: 'var(--text-color-subtle)' }} />}
         />
       </Wrapper>
@@ -96,13 +96,13 @@ export const CollectionsGrid = ({ searchQuery }: CollectionsGridProps) => {
             collection={collection} 
           />
         ),
-        active: selectedCollections.includes(collection.collection_name),
+        active: activeCollection?.collection_name === collection.collection_name,
         href: `#${collection.collection_name}`,
         attributes: {
           VerticalNavLink: {
             onClick: (e: React.MouseEvent) => {
               e.preventDefault();
-              toggleCollection(collection.collection_name);
+              openDrawer(collection);
             }
           }
         }

@@ -13,12 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import Chat from "./pages/Chat";
+import UploadDashboard from "./pages/UploadDashboard";
 import NewCollection from "./pages/NewCollection";
 import Layout from "./components/layout/Layout";
-import SettingsPage from "./pages/SettingsPage";
 import { ToastContainer } from "./components/ui/ToastContainer";
 import { useAppHealthStatus, useServerDefaultsInitialization } from "./store/useSettingsStore";
 import { useHealthMonitoring } from "./hooks/useHealthMonitoring";
@@ -53,9 +52,9 @@ function AppContent() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Chat />} />
+        <Route path="/" element={<UploadDashboard />} />
         <Route path="/collections/new" element={<NewCollection />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
   );
