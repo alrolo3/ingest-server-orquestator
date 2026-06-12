@@ -25,7 +25,9 @@ from processing.base_chunker import AbstractChunker
 _DECIMAL_NUMBER_RE = re.compile(r"\d+(?:\.\d{3})*,\d+")
 _INTEGER_RE = re.compile(r"\d+")
 _MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
-MARKDOWN_SINGLE_CHUNK_MAX_TOKENS = 16_000
+SPARSE_CHUNK_MAX_TOKENS = 512
+CHUNK_OVERLAP_TOKENS = 100
+MARKDOWN_SINGLE_CHUNK_MAX_TOKENS = SPARSE_CHUNK_MAX_TOKENS
 _MARKDOWN_INPUT_FORMATS = {"md", "markdown"}
 
 
@@ -166,6 +168,8 @@ class DoclingChunker(AbstractChunker):
     """Chunker implementation backed by Docling."""
 
     _chunker: HybridChunker = PrivateAttr()
+    _max_tokens: int = PrivateAttr(default=SPARSE_CHUNK_MAX_TOKENS)
+    _chunk_overlap_tokens: int = PrivateAttr(default=CHUNK_OVERLAP_TOKENS)
 
     def __init__(
         self,
@@ -185,9 +189,14 @@ class DoclingChunker(AbstractChunker):
         if server_config.chunk_max_tokens <= 0:
             raise ValueError("chunk_max_tokens must be greater than zero")
 
+        self._max_tokens = min(server_config.chunk_max_tokens, SPARSE_CHUNK_MAX_TOKENS)
+        self._chunk_overlap_tokens = min(
+            CHUNK_OVERLAP_TOKENS,
+            max(0, self._max_tokens - 1),
+        )
         self._chunker = self._build_token_chunker(
             tokenizer_path=str(tokenizer_path),
-            max_tokens=server_config.chunk_max_tokens,
+            max_tokens=self._max_tokens,
         )
 
     @staticmethod
@@ -234,18 +243,19 @@ class DoclingChunker(AbstractChunker):
                 continue
             doc_items, page_numbers = _docling_chunk_refs(doc_chunk)
             headings = _docling_chunk_headings(doc_chunk)
-            chunk_index = len(chunks)
-            chunks.append(
-                self._document_chunk(
-                    document=document,
-                    chunk_index=chunk_index,
-                    content=content,
-                    content_token_count=self._count_tokens(content),
-                    doc_items=doc_items,
-                    page_numbers=page_numbers,
-                    headings=headings,
+            for chunk_content in self._split_content_to_sparse_limit(content):
+                chunk_index = len(chunks)
+                chunks.append(
+                    self._document_chunk(
+                        document=document,
+                        chunk_index=chunk_index,
+                        content=chunk_content,
+                        content_token_count=self._count_tokens(chunk_content),
+                        doc_items=doc_items,
+                        page_numbers=page_numbers,
+                        headings=headings,
+                    )
                 )
-            )
         return chunks
 
     def _markdown_single_chunk_if_small(
@@ -293,6 +303,52 @@ class DoclingChunker(AbstractChunker):
 
     def _count_tokens(self, content: str) -> int | None:
         return self._chunker.tokenizer.count_tokens(content)
+
+    def _within_sparse_limit(self, content: str) -> bool:
+        token_count = self._count_tokens(content)
+        return token_count is not None and token_count <= self._max_tokens
+
+    def _split_content_to_sparse_limit(self, content: str) -> list[str]:
+        stripped = content.strip()
+        if not stripped:
+            return []
+        if self._within_sparse_limit(stripped):
+            return [stripped]
+        return [chunk for chunk in self._tokenizer_chunks(stripped) if chunk.strip()]
+
+    def _tokenizer_chunks(self, content: str) -> list[str]:
+        tokenizer = getattr(self._chunker.tokenizer, "get_tokenizer", lambda: None)()
+        encode = getattr(tokenizer, "encode", None)
+        decode = getattr(tokenizer, "decode", None)
+        if callable(encode) and callable(decode):
+            token_ids = encode(content, add_special_tokens=False)
+            if token_ids:
+                chunks = []
+                step = self._token_window_step()
+                for start in range(0, len(token_ids), step):
+                    decoded = decode(
+                        token_ids[start : start + self._max_tokens],
+                        skip_special_tokens=True,
+                    ).strip()
+                    if decoded:
+                        chunks.append(decoded)
+                if chunks:
+                    return chunks
+
+        return self._word_chunks(content)
+
+    def _token_window_step(self) -> int:
+        return max(1, self._max_tokens - self._chunk_overlap_tokens)
+
+    def _word_chunks(self, content: str) -> list[str]:
+        words = content.split()
+        if not words:
+            return []
+        step = self._token_window_step()
+        return [
+            " ".join(words[start : start + self._max_tokens])
+            for start in range(0, len(words), step)
+        ]
 
     def _document_chunk(
         self,

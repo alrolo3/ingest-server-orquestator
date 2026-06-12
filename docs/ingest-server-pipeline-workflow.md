@@ -166,13 +166,18 @@ Chunking is implemented in `processing/chunking/docling_chunker.py`.
 The chunker:
 
 - Uses Docling `HybridChunker`.
-- Loads the tokenizer from `/tokenizer`.
-- Uses `chunk_max_tokens=8192`.
+- Loads the Qwen3 tokenizer from `/tokenizer`.
+- Uses `min(chunk_max_tokens, 512)` for Docling `HybridChunker` token
+  chunking so pre-chunked `content_sparse` stays below the sparse inference
+  budget.
 - Emits Markdown-like documents without pages as one chunk when the full exported
-  Markdown is at or below `16,000` tokenizer tokens. Larger Markdown-like
+  Markdown is at or below `512` tokenizer tokens. Larger Markdown-like
   documents still use Docling token chunking.
 - Repeats table headers across split table chunks.
 - Uses contextualized chunk text where available.
+- Splits any contextualized chunk that still exceeds `512` tokenizer tokens
+  into token windows with a `100` token overlap before creating
+  `DocumentChunk` records.
 - Copies contextualized chunk text into `content_sparse` for sparse semantic retrieval.
 - Extracts Docling item references and page numbers from chunk provenance.
 
@@ -213,7 +218,7 @@ The dispatcher connects to:
 | Bulk request timeout | `1800s` |
 | Certificate verification | `false` |
 
-`ElasticsearchDispatch` upserts the managed ingest pipeline, creates the index when absent, adds missing v4 sparse semantic mappings to existing v4 indexes when needed, then indexes chunks in bulk. Each bulk item uses:
+`ElasticsearchDispatch` upserts the managed ingest pipeline, creates the index when absent, then indexes chunks in bulk. Existing index mappings are not patched in place; recreate the index to pick up mapping changes. Each bulk item uses:
 
 - `_index`: `open-rag-embeddings-v4`
 - `_id`: `chunk.chunk_id`
@@ -264,7 +269,7 @@ Pipeline processors:
 | 6 | `remove` | Removes temporary or legacy fields |
 | failure | `set` | Writes failures to `ingest_error` |
 
-The index mapping stores `content` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `spanish-splade-v3-strong_search`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
+The index mapping stores `content` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `bge-m3-sparse`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
 
 ## Kibana Agentic Chat Retrieval
 

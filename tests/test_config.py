@@ -307,7 +307,7 @@ class ServerConfigTest(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "inference_id": "spanish-splade-v3-strong_search",
+                "inference_id": "bge-m3-sparse",
                 "task_type": "sparse_embedding",
             },
             mappings["_meta"]["sparse_semantic_inference"],
@@ -316,7 +316,7 @@ class ServerConfigTest(unittest.TestCase):
             field_mapping = mappings["properties"][field_name]
             self.assertEqual("semantic_text", field_mapping["type"])
             self.assertEqual(
-                "spanish-splade-v3-strong_search",
+                "bge-m3-sparse",
                 field_mapping["inference_id"],
             )
             self.assertEqual({"strategy": "none"}, field_mapping["chunking_settings"])

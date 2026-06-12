@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestator"
 sys.path.insert(0, str(SRC_DIR))
@@ -9,9 +10,11 @@ from config.config import ServerConfig
 from model.base_document import AbstractOutputDocument
 from model.parsed_document import ParsedDocument
 from processing.chunking.docling_chunker import (
+    CHUNK_OVERLAP_TOKENS,
     ChunkMarkdownTableSerializer,
     DoclingChunker,
     MARKDOWN_SINGLE_CHUNK_MAX_TOKENS,
+    SPARSE_CHUNK_MAX_TOKENS,
 )
 
 from docling_core.transforms.chunker.hierarchical_chunker import DocChunk, DocMeta
@@ -27,6 +30,15 @@ from metrics.progress import NullProgressReporter
 class FakeTokenizer:
     def count_tokens(self, text: str) -> int:
         return len(text.split())
+
+    def get_tokenizer(self) -> "FakeTokenizer":
+        return self
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[str]:
+        return text.split()
+
+    def decode(self, token_ids: list[str], skip_special_tokens: bool = True) -> str:
+        return " ".join(token_ids)
 
 
 class FakeDoclingChunker:
@@ -138,6 +150,67 @@ class ChunkMarkdownTableSerializerTest(unittest.TestCase):
 
 
 class DoclingChunkerTest(unittest.TestCase):
+    def test_sparse_chunk_limit_is_512_tokens_with_100_token_overlap(self) -> None:
+        self.assertEqual(512, SPARSE_CHUNK_MAX_TOKENS)
+        self.assertEqual(100, CHUNK_OVERLAP_TOKENS)
+        self.assertEqual(SPARSE_CHUNK_MAX_TOKENS, MARKDOWN_SINGLE_CHUNK_MAX_TOKENS)
+
+    def test_hybrid_chunker_uses_existing_tokenizer_with_sparse_safe_limit(self) -> None:
+        config = ServerConfig(
+            app_name="test",
+            environment="test",
+            inbound_queue_name="queue",
+            worker_max_workers=1,
+            chunk_max_tokens=8192,
+            tokenizer_path=Path("/tmp/tokenizer"),
+            docling_artifacts_path=Path("/tmp/docling-artifacts"),
+            docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+        )
+
+        with patch.object(
+            DoclingChunker,
+            "_build_token_chunker",
+            return_value=FakeDoclingChunker([]),
+        ) as build_chunker:
+            DoclingChunker(
+                server_config=config,
+                tokenizer_path="/tmp/tokenizer",
+                type_="token",
+            )
+
+        build_chunker.assert_called_once_with(
+            tokenizer_path="/tmp/tokenizer",
+            max_tokens=SPARSE_CHUNK_MAX_TOKENS,
+        )
+
+    def test_hybrid_chunker_preserves_lower_configured_limit(self) -> None:
+        config = ServerConfig(
+            app_name="test",
+            environment="test",
+            inbound_queue_name="queue",
+            worker_max_workers=1,
+            chunk_max_tokens=128,
+            tokenizer_path=Path("/tmp/tokenizer"),
+            docling_artifacts_path=Path("/tmp/docling-artifacts"),
+            docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+        )
+
+        with patch.object(
+            DoclingChunker,
+            "_build_token_chunker",
+            return_value=FakeDoclingChunker([]),
+        ) as build_chunker:
+            DoclingChunker(
+                server_config=config,
+                tokenizer_path="/tmp/tokenizer",
+                type_="token",
+            )
+
+        build_chunker.assert_called_once_with(
+            tokenizer_path="/tmp/tokenizer",
+            max_tokens=128,
+        )
+
     def test_chunk_returns_fixed_rag_style_payload(self) -> None:
         item = TextItem(
             self_ref="#/texts/0",
@@ -309,6 +382,73 @@ class DoclingChunkerTest(unittest.TestCase):
         self.assertEqual("Sample markdown", chunk.clean_title)
         self.assertEqual(["Introduction"], chunk.headings)
         self.assertEqual("sample.md", chunk.source_file_name)
+
+    def test_chunk_splits_contextualized_content_over_sparse_limit(self) -> None:
+        item = TextItem(
+            self_ref="#/texts/0",
+            label=DocItemLabel.TEXT,
+            prov=[],
+            orig="raw body",
+            text="raw body",
+        )
+        words = [f"word{i}" for i in range((SPARSE_CHUNK_MAX_TOKENS * 2) + 16)]
+        doc_chunk = DocChunk(
+            text=" ".join(words),
+            meta=DocMeta(
+                doc_items=[item],
+                headings=["Section"],
+            ),
+        )
+        chunker = DoclingChunker.model_construct(
+            type="token",
+            server_config=ServerConfig(
+                app_name="test",
+                environment="test",
+                inbound_queue_name="queue",
+                worker_max_workers=1,
+                chunk_max_tokens=8192,
+                tokenizer_path=Path("/tmp/tokenizer"),
+                docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+            ),
+        )
+        chunker._chunker = FakeDoclingChunker([doc_chunk])
+        parsed_document = ParsedDocument(
+            document_id="doc-1",
+            source_file_name="sample.pdf",
+            source_path="/tmp/sample.pdf",
+            title="Sample document",
+            page_count=1,
+            metadata={"docling": {"parser": "docling", "input_format": "pdf"}},
+            original_out_doc=AbstractOutputDocument(raw=object()),
+        )
+
+        chunks = chunker.chunk(parsed_document, NullProgressReporter())
+
+        self.assertEqual(3, len(chunks))
+        self.assertEqual([0, 1, 2], [chunk.chunk_index for chunk in chunks])
+        self.assertEqual(
+            ["doc-1-00000", "doc-1-00001", "doc-1-00002"],
+            [chunk.chunk_id for chunk in chunks],
+        )
+        self.assertEqual(
+            [SPARSE_CHUNK_MAX_TOKENS, SPARSE_CHUNK_MAX_TOKENS, 217],
+            [chunk.content_token_count for chunk in chunks],
+        )
+        self.assertEqual(
+            chunks[0].content.split()[-CHUNK_OVERLAP_TOKENS:],
+            chunks[1].content.split()[:CHUNK_OVERLAP_TOKENS],
+        )
+        self.assertEqual(
+            chunks[1].content.split()[-CHUNK_OVERLAP_TOKENS:],
+            chunks[2].content.split()[:CHUNK_OVERLAP_TOKENS],
+        )
+        for chunk in chunks:
+            self.assertLessEqual(
+                chunk.content_token_count or 0,
+                SPARSE_CHUNK_MAX_TOKENS,
+            )
+            self.assertEqual(chunk.content, chunk.content_sparse)
 
 
 if __name__ == "__main__":

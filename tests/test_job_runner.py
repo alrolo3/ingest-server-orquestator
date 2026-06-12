@@ -11,11 +11,13 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestat
 sys.path.insert(0, str(SRC_DIR))
 
 from model.document_chunk import DocumentChunk
+from metrics.store import JobMetricsStore
 from queues.domain.job import Job
 from workers.job_runner import (
     _serializable_job_error,
     _write_chunk_outputs,
     _write_markdown_output,
+    job_runner,
     output_file_name,
 )
 
@@ -153,6 +155,90 @@ class JobRunnerTest(unittest.TestCase):
 
             self.assertEqual(output_root / "job-1" / "chunks", chunks_dir)
             self.assertEqual([], list(chunks_dir.iterdir()))
+
+    def test_job_runner_writes_outputs_before_dispatch_failure(self) -> None:
+        job = Job(
+            job_id="job-1",
+            parser_type="docling",
+            input_data={"file_name": "source.pdf", "source": "test"},
+            chunker_type="token",
+        )
+        parsed_document = SimpleNamespace(
+            title="My Document",
+            source_file_name="source.pdf",
+            get_markdown=lambda: "# My Document\n",
+        )
+        chunks = [
+            DocumentChunk(
+                content="first chunk",
+                content_sparse="first chunk",
+                document_id="doc-1",
+                chunk_id="chunk-1",
+                chunk_index=0,
+                chunking_strategy="token",
+                source_file_name="source.pdf",
+            )
+        ]
+
+        class FakeParser:
+            @staticmethod
+            def parse(_job, _progress):
+                return parsed_document
+
+        class FakeChunker:
+            @staticmethod
+            def chunk(_parsed_document, _progress):
+                return chunks
+
+        class FailingDispatch:
+            def __init__(self, server_config):
+                self.server_config = server_config
+
+            @staticmethod
+            def dispatch_chunks(_chunks):
+                raise ConnectionError("elastic unavailable")
+
+        metrics = JobMetricsStore()
+        with TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            with (
+                patch("workers.job_runner.OUTPUT_DIR", output_root),
+                patch("workers.job_runner.configure_torch_cuda_device"),
+                patch("workers.job_runner.torch.set_float32_matmul_precision"),
+                patch(
+                    "workers.job_runner.ParserFactory.create",
+                    return_value=FakeParser(),
+                ),
+                patch(
+                    "workers.job_runner.ChunkerFactory.create",
+                    return_value=FakeChunker(),
+                ),
+                patch("workers.job_runner.ElasticsearchDispatch", FailingDispatch),
+                patch("workers.job_runner.LOGGER.info"),
+                patch("workers.job_runner.LOGGER.exception"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "ConnectionError: elastic unavailable",
+                ):
+                    job_runner(job, metrics)
+
+            output_path = output_root / "job-1" / "My Document output.md"
+            chunks_dir = output_root / "job-1" / "chunks"
+            chunk_path = chunks_dir / "0001-chunk-1.json"
+            self.assertEqual("# My Document\n", output_path.read_text(encoding="utf-8"))
+            chunk_output = json.loads(chunk_path.read_text(encoding="utf-8"))
+            self.assertEqual("first chunk", chunk_output["content"])
+
+        record = metrics.get(job.job_id)
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual("failed", record["status"])
+        self.assertEqual("dispatching", record["stage"])
+        self.assertEqual(str(output_path), record["output_path"])
+        self.assertEqual("My Document output.md", record["output_file_name"])
+        self.assertEqual(1, record["chunks_created"])
+        self.assertEqual(0, record["chunks_dispatched"])
 
 
 if __name__ == "__main__":

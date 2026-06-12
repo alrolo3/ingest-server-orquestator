@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 LANGUAGE_DETECTION_MODEL = "lang_ident_model_1"
 DEFAULT_LEXICAL_LANGUAGE = "en"
-SPARSE_SEMANTIC_INFERENCE_ID = "spanish-splade-v3-strong_search"
+SPARSE_SEMANTIC_INFERENCE_ID = "bge-m3-sparse"
 SPARSE_SEMANTIC_TASK_TYPE = "sparse_embedding"
 RETRYABLE_BULK_ITEM_STATUSES = {429, 500, 502, 503, 504}
 MAX_BULK_ITEM_RETRY_DELAY_SECONDS = 30
@@ -488,7 +488,6 @@ class ElasticsearchDispatch(AbstractDispatcher):
 
     def _ensure_index(self) -> None:
         if bool(self._client.indices.exists(index=self.index_name)):
-            self._ensure_index_mappings()
             return
 
         self._client.indices.create(
@@ -498,31 +497,6 @@ class ElasticsearchDispatch(AbstractDispatcher):
             },
             mappings=build_open_rag_mappings(self.inference_id),
         )
-
-    def _ensure_index_mappings(self) -> None:
-        mappings = build_open_rag_mappings(self.inference_id)
-        properties = mappings["properties"]
-        missing_properties = {
-            field_name: properties[field_name]
-            for field_name in ("content_sparse", "clean_title", "headings")
-            if not self._mapping_field_exists(field_name)
-        }
-        if missing_properties:
-            self._client.indices.put_mapping(
-                index=self.index_name,
-                properties=missing_properties,
-            )
-
-    def _mapping_field_exists(self, field_name: str) -> bool:
-        response = self._client.indices.get_mapping(index=self.index_name)
-        response_body = getattr(response, "body", response)
-        index_mapping = response_body.get(self.index_name)
-        if index_mapping is None and response_body:
-            index_mapping = next(iter(response_body.values()))
-        if index_mapping is None:
-            return False
-        properties = index_mapping.get("mappings", {}).get("properties", {})
-        return field_name in properties
 
     def dispatch_chunks(self, chunks: list[DocumentChunk]) -> None:
         if not chunks:

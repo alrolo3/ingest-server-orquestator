@@ -6,25 +6,36 @@ from unittest.mock import patch
 SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestator"
 sys.path.insert(0, str(SRC_DIR))
 
-from dispatcher.elastic.elastic import ElasticsearchDispatch, OPEN_RAG_PIPELINE
+from dispatcher.elastic.elastic import (
+    ElasticsearchDispatch,
+    OPEN_RAG_PIPELINE,
+    build_open_rag_mappings,
+)
 from model.document_chunk import DocumentChunk
 
 
 class FakeIndices:
-    def __init__(self, mapping: dict[str, object]) -> None:
-        self.mapping = mapping
+    def __init__(self, exists: bool) -> None:
+        self.exists_value = exists
+        self.create_calls: list[dict[str, object]] = []
         self.put_mapping_calls: list[dict[str, object]] = []
 
+    def exists(self, *, index: str) -> bool:
+        return self.exists_value
+
+    def create(self, **kwargs: object) -> None:
+        self.create_calls.append(kwargs)
+
     def get_mapping(self, *, index: str) -> dict[str, object]:
-        return self.mapping
+        raise AssertionError("existing index mappings should not be inspected")
 
     def put_mapping(self, **kwargs: object) -> None:
-        self.put_mapping_calls.append(kwargs)
+        raise AssertionError("existing index mappings should not be updated")
 
 
 class FakeClient:
-    def __init__(self, mapping: dict[str, object]) -> None:
-        self.indices = FakeIndices(mapping)
+    def __init__(self, index_exists: bool) -> None:
+        self.indices = FakeIndices(index_exists)
 
 
 class FakeBulkClient:
@@ -105,94 +116,43 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         self.assertIn('lastIndexOf("/")', normalization_source)
         self.assertIn('lastIndexOf("\\\\")', normalization_source)
 
-    def test_ensure_index_mappings_adds_sparse_semantic_fields_when_missing(
-        self,
-    ) -> None:
+    def test_ensure_index_creates_new_mapping_with_bge_sparse_endpoint(self) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
             index_name="rag-index",
+            pipeline_name="rag-pipeline",
             inference_id="custom-inference",
         )
-        dispatch._client = FakeClient(
-            {
-                "rag-index": {
-                    "mappings": {
-                        "properties": {
-                            "content": {"type": "semantic_text"},
-                        }
-                    }
-                }
-            }
-        )
+        dispatch._client = FakeClient(index_exists=False)
 
-        dispatch._ensure_index_mappings()
+        dispatch._ensure_index()
 
-        calls = dispatch._client.indices.put_mapping_calls
+        calls = dispatch._client.indices.create_calls
         self.assertEqual(1, len(calls))
         self.assertEqual("rag-index", calls[0]["index"])
         self.assertEqual(
-            ["content_sparse", "clean_title", "headings"],
-            list(calls[0]["properties"]),
+            {"index.default_pipeline": "rag-pipeline"},
+            calls[0]["settings"],
         )
-        for mapping in calls[0]["properties"].values():
-            self.assertEqual("semantic_text", mapping["type"])
+        mappings = calls[0]["mappings"]
+        self.assertEqual(build_open_rag_mappings("custom-inference"), mappings)
+        for field_name in ("content_sparse", "clean_title", "headings"):
             self.assertEqual(
-                "spanish-splade-v3-strong_search",
-                mapping["inference_id"],
+                "bge-m3-sparse",
+                mappings["properties"][field_name]["inference_id"],
             )
-            self.assertEqual({"strategy": "none"}, mapping["chunking_settings"])
-            self.assertNotIn("index_options", mapping)
-            self.assertNotIn("model_settings", mapping)
 
-    def test_ensure_index_mappings_adds_only_missing_sparse_fields(
-        self,
-    ) -> None:
+    def test_ensure_index_leaves_existing_index_unchanged(self) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
             index_name="rag-index",
+            pipeline_name="rag-pipeline",
             inference_id="custom-inference",
         )
-        dispatch._client = FakeClient(
-            {
-                "rag-index": {
-                    "mappings": {
-                        "properties": {
-                            "content": {"type": "semantic_text"},
-                            "content_sparse": {"type": "semantic_text"},
-                            "clean_title": {"type": "semantic_text"},
-                        }
-                    }
-                }
-            }
-        )
+        dispatch._client = FakeClient(index_exists=True)
 
-        dispatch._ensure_index_mappings()
-
-        calls = dispatch._client.indices.put_mapping_calls
-        self.assertEqual(1, len(calls))
-        self.assertEqual(["headings"], list(calls[0]["properties"]))
-
-    def test_ensure_index_mappings_skips_existing_sparse_fields(self) -> None:
-        dispatch = ElasticsearchDispatch.model_construct(
-            index_name="rag-index",
-            inference_id="custom-inference",
-        )
-        dispatch._client = FakeClient(
-            {
-                "rag-index": {
-                    "mappings": {
-                        "properties": {
-                            "content": {"type": "semantic_text"},
-                            "content_sparse": {"type": "semantic_text"},
-                            "clean_title": {"type": "semantic_text"},
-                            "headings": {"type": "semantic_text"},
-                        }
-                    }
-                }
-            }
-        )
-
-        dispatch._ensure_index_mappings()
+        dispatch._ensure_index()
 
         self.assertEqual([], dispatch._client.indices.put_mapping_calls)
+        self.assertEqual([], dispatch._client.indices.create_calls)
 
     def test_pipeline_populates_v4_sparse_fields_and_removes_old_fields(self) -> None:
         script_sources = [
