@@ -265,6 +265,24 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
+  name: l5d-elastic-service
+spec:
+  headers:
+    customRequestHeaders:
+      l5d-dst-override: quickstart-es-http.default.svc.cluster.local:9200
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: l5d-headlamp-service
+spec:
+  headers:
+    customRequestHeaders:
+      l5d-dst-override: headlamp.kube-system.svc.cluster.local:80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
   name: l5d-inference-service
 spec:
   headers:
@@ -301,7 +319,14 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: ServersTransport
 metadata:
-  name: quickstart-kibana-skipverify
+  name: elastic-eck-transport
+spec:
+  insecureSkipVerify: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: kibana-eck-transport
 spec:
   insecureSkipVerify: true
 ---
@@ -314,34 +339,59 @@ spec:
     - websecure
   routes:
     - kind: Rule
-      match: Host(`inference.simona.local`)
+      match: Host(`inference.simona.local`) && PathPrefix(`/`)
       middlewares:
         - name: l5d-inference-service
       services:
         - name: inference-service
+          nativeLB: true
           port: 4000
     - kind: Rule
-      match: Host(`gradio.simona.local`)
+      match: Host(`gradio.simona.local`) && PathPrefix(`/`)
       middlewares:
         - name: l5d-frontend-service
       services:
         - name: ingest-frontend
+          nativeLB: true
           port: 3000
     - kind: Rule
-      match: Host(`kibana.simona.local`)
+      match: Host(`kibana.simona.local`) && PathPrefix(`/`)
       middlewares:
         - name: l5d-kibana-service
       services:
         - name: quickstart-kb-http
+          nativeLB: true
+          passHostHeader: true
           port: 5601
           scheme: https
-          serversTransport: quickstart-kibana-skipverify
+          serversTransport: kibana-eck-transport
     - kind: Rule
-      match: Host(`openwebui.simona.local`)
+      match: Host(`openwebui.simona.local`) && PathPrefix(`/`)
       middlewares:
         - name: l5d-openwebui-service
       services:
         - name: openwebui-service
+          nativeLB: true
           port: 8080
+    - kind: Rule
+      match: Host(`elastic.simona.local`) && PathPrefix(`/`)
+      middlewares:
+        - name: l5d-elastic-service
+      services:
+        - name: quickstart-es-http
+          nativeLB: true
+          passHostHeader: true
+          port: 9200
+          scheme: https
+          serversTransport: elastic-eck-transport
+    - kind: Rule
+      match: Host(`headlamp.simona.local`) && PathPrefix(`/`)
+      middlewares:
+        - name: l5d-headlamp-service
+      services:
+        - name: headlamp
+          namespace: kube-system
+          nativeLB: true
+          port: 80
   tls:
     secretName: simona-apps-tls

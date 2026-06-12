@@ -114,6 +114,8 @@ The active `IngressRoute/default/simona-apps-ingressroute` uses entrypoint `webs
 | `gradio.simona.local` | `ingest-frontend` | `3000` | Existing public upload hostname now serves the NVIDIA RAG React frontend |
 | `kibana.simona.local` | `quickstart-kb-http` | `5601` | HTTPS to ECK Kibana, Traefik `ServersTransport` skips upstream cert verification |
 | `openwebui.simona.local` | `openwebui-service` | `8080` | Route exists, but no matching Service is present in the live namespace |
+| `elastic.simona.local` | `quickstart-es-http` | `9200` | HTTPS to ECK Elasticsearch, Traefik `ServersTransport` skips upstream cert verification |
+| `headlamp.simona.local` | `kube-system/headlamp` | `80` | Headlamp dashboard route in the `kube-system` namespace |
 
 The route uses Linkerd header middlewares:
 
@@ -123,6 +125,8 @@ The route uses Linkerd header middlewares:
 | `l5d-frontend-service` | `ingest-frontend.default.svc.cluster.local:3000` |
 | `l5d-kibana-service` | `quickstart-kb-http.default.svc.cluster.local:5601` |
 | `l5d-openwebui-service` | `openwebui-service.default.svc.cluster.local:8080` |
+| `l5d-elastic-service` | `quickstart-es-http.default.svc.cluster.local:9200` |
+| `l5d-headlamp-service` | `headlamp.kube-system.svc.cluster.local:80` |
 
 cert-manager status:
 
@@ -322,4 +326,4 @@ PersistentVolume reclaim policies observed:
 - `vllm-bge-m3` is configured in LiteLLM, but the deployment is scaled to zero, so `bge-m3-pooling` has no backing endpoint until that deployment is scaled up.
 - The checked-in `k8s/ingest-server.yaml` defines the frontend deployment, service, Traefik `simona-apps-ingressroute`, Linkerd destination middlewares, and frontend/API NetworkPolicies. Apply it to route `gradio.simona.local` to `ingest-frontend:3000`.
 - The live `ingest-server-config` differs from older checked-in manifest defaults. The live cluster points ingest traffic to ECK Elasticsearch and LiteLLM service DNS names.
-- Internal ECK HTTP services use TLS. The checked-in Traefik `quickstart-kibana-skipverify` `ServersTransport` sets `insecureSkipVerify: true` for the Kibana upstream certificate.
+- Internal ECK HTTP services use TLS. The checked-in Traefik `kibana-eck-transport` and `elastic-eck-transport` `ServersTransport` resources set `insecureSkipVerify: true` for the ECK upstream certificates.
