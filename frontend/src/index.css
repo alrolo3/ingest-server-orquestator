@@ -1,0 +1,38 @@
+@import "tailwindcss/theme.css";
+@import "tailwindcss/preflight.css";
+@import "tailwindcss/utilities.css";
+@import "@kui/react/base.css";
+
+/* Apply theme background to html and body */
+html, body {
+  background-color: var(--background-color-surface-base);
+  color: var(--text-color-default);
+}
+
+/* Bounce animation for StreamingIndicator dots */
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Fix overflow in chat message bubbles */
+.prose {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0; /* Prevent flex children from forcing container growth */
+}
+
+.prose pre,
+.prose code {
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+  word-wrap: normal;
+}

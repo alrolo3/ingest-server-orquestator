@@ -45,11 +45,12 @@ For ingest data, use one writable PV/PVC and subpaths:
   outputs/
 ```
 
-## Build And Export The Application Image
+## Build And Export The Application Images
 
-Build the Docker image on a machine that has network access to install Python
-dependencies. The build context must be the parent directory of this repository,
-because the Dockerfile copies `ingest-server-orquestator/...` paths:
+Build the Docker images on a machine that has network access to install Python
+and npm dependencies. The API image build context must be the parent directory
+of this repository, because the Dockerfile copies
+`ingest-server-orquestator/...` paths:
 
 ```bash
 cd /datastore/experimento-101
@@ -64,26 +65,33 @@ the build context:
 
 ```bash
 docker build -f Dockerfile -t ingest-server-orquestator:latest ..
+docker build -f frontend/Dockerfile -t ingest-server-orquestator-frontend:latest frontend
 ```
 
-The tag must match the image referenced by `k8s/ingest-server.yaml`:
+The tags must match the images referenced by `k8s/ingest-server.yaml`:
 
 ```yaml
 image: ingest-server-orquestator:latest
+image: ingest-server-orquestator-frontend:latest
 imagePullPolicy: IfNotPresent
 ```
 
-Export the image as a tarball for the air-gapped k3s node:
+Export the images as tarballs for the air-gapped k3s node:
 
 ```bash
 docker save ingest-server-orquestator:latest \
   | gzip -c > ingest-server-orquestator_latest.tar.gz
 sha256sum ingest-server-orquestator_latest.tar.gz \
   > ingest-server-orquestator_latest.tar.gz.sha256
+
+docker save ingest-server-orquestator-frontend:latest \
+  | gzip -c > ingest-server-orquestator-frontend_latest.tar.gz
+sha256sum ingest-server-orquestator-frontend_latest.tar.gz \
+  > ingest-server-orquestator-frontend_latest.tar.gz.sha256
 ```
 
-Copy `ingest-server-orquestator_latest.tar.gz` and its `.sha256` file to every
-k3s node that can schedule the ingest pod.
+Copy both image archives and their `.sha256` files to every k3s node that can
+schedule the ingest or frontend pods.
 
 ## Import The Image Into k3s
 
@@ -93,6 +101,10 @@ On each air-gapped k3s node, verify and import the image into k3s containerd:
 sha256sum -c ingest-server-orquestator_latest.tar.gz.sha256
 gunzip -k ingest-server-orquestator_latest.tar.gz
 sudo k3s ctr -n k8s.io images import ingest-server-orquestator_latest.tar
+
+sha256sum -c ingest-server-orquestator-frontend_latest.tar.gz.sha256
+gunzip -k ingest-server-orquestator-frontend_latest.tar.gz
+sudo k3s ctr -n k8s.io images import ingest-server-orquestator-frontend_latest.tar
 sudo k3s crictl images | grep ingest-server-orquestator
 ```
 
@@ -118,32 +130,31 @@ kubectl rollout status deployment/ingest-server
 The API application listens on port `8000`, and the API service is `ClusterIP`
 only. Do not expose the `ingest-server` service outside the cluster. The
 manifest also includes a NetworkPolicy that allows API ingress on port `8000`
-from the Gradio pod only, when network policy enforcement is enabled in k3s.
+from the React frontend pod only, when network policy enforcement is enabled in k3s.
 
-Gradio runs as a separate pod in the same manifest and talks to the internal API
+The React frontend runs as a separate pod in the same manifest and talks to the internal API
 service at `http://ingest-server:8000`.
 
 ```text
-http://<ingest-gradio-service>:7860
+http://<ingest-frontend-service>:3000
 ```
 
-The Gradio pod uses these ConfigMap values:
+The frontend pod uses these ConfigMap values:
 
 ```yaml
 data:
   INGEST_API_URL: http://ingest-server:8000
-  INGEST_POLL_SECONDS: "3"
-  INGEST_TIMEOUT_SECONDS: "60"
-  GRADIO_ROOT_PATH: ""
+  PORT: "3000"
 ```
 
-The upload and jobs endpoints are fixed in code as `/api/v1/ingest/file` and
-`/api/v1/ingest/jobs`.
+The NVIDIA-compatible frontend upload and status endpoints are `/api/documents`
+and `/api/status`. The legacy direct ingest endpoints remain available as
+`/api/v1/ingest/file` and `/api/v1/ingest/jobs`.
 
-For local access without exposing the API service, port-forward only Gradio:
+For local access without exposing the API service, port-forward only the frontend:
 
 ```bash
-kubectl port-forward svc/ingest-gradio 7860:7860
+kubectl port-forward svc/ingest-frontend 3000:3000
 ```
 
 ## GPU Selection In k3s

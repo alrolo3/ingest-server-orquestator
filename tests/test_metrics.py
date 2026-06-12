@@ -18,7 +18,7 @@ class JobMetricsStoreTest(unittest.TestCase):
             parser_type="docling",
             input_data={
                 "file_name": "sample.pdf",
-                "source": "gradio",
+                "source": "frontend",
                 "size_bytes": 42,
             },
             chunker_type="token",

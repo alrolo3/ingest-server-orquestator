@@ -2,12 +2,12 @@
 
 Snapshot date: 2026-06-09.
 
-This document describes the full runtime path from a user uploading a file in Gradio to a user asking a grounded question in Kibana agentic chat and retrieving indexed document chunks. It combines live Kubernetes state, live Elasticsearch/Kibana workflow state, and repository source code.
+This document describes the full runtime path from a user uploading a file in the NVIDIA RAG React frontend to a user asking a grounded question in Kibana agentic chat and retrieving indexed document chunks. It combines Kubernetes state, Elasticsearch/Kibana workflow state, and repository source code.
 
 ## End-To-End Summary
 
-1. A user opens `https://gradio.simona.local` through Traefik and uploads one or more files.
-2. Gradio posts each file to the internal ingest API at `http://ingest-server.default.svc.cluster.local:8000/api/v1/ingest/file` with form value `source=gradio`.
+1. A user opens the React frontend through Traefik and uploads one or more files.
+2. The frontend posts selected files to the internal ingest API at `http://ingest-server.default.svc.cluster.local:8000/api/documents?blocking=false` using NVIDIA RAG frontend-compatible multipart fields.
 3. The FastAPI ingest server writes the uploaded file to `/uploads`, creates a `Job`, records in-memory metrics, and enqueues the job in a process-local queue.
 4. The API process already has an `InboundWorker` thread running. It dequeues jobs and starts a spawned worker process with `ProcessPoolExecutor`.
 5. The worker parses the PDF, Markdown, or JSON file with Docling, preprocessing arbitrary JSON to Markdown before conversion and using local model artifacts and OCR settings from `ingest-server-config` for PDF processing.
@@ -24,8 +24,8 @@ This document describes the full runtime path from a user uploading a file in Gr
 ```mermaid
 sequenceDiagram
     actor User
-    participant Traefik as Traefik gradio.simona.local
-    participant Gradio as ingest-gradio Gradio UI
+    participant Traefik as Traefik frontend host
+    participant Frontend as ingest-frontend React UI
     participant API as ingest-server FastAPI
     participant PVC as ingest-data-pvc uploads outputs
     participant Queue as LocalQueue metrics store
@@ -38,12 +38,12 @@ sequenceDiagram
     participant VLLMEmb as vLLM Qwen3-Embedding-4B
 
     User->>Traefik: Upload file in browser
-    Traefik->>Gradio: Route to Service ingest-gradio:7860
-    Gradio->>API: POST /api/v1/ingest/file multipart file source=gradio
+    Traefik->>Frontend: Route to Service ingest-frontend:3000
+    Frontend->>API: POST /api/documents multipart documents[] data={collection_name}
     API->>PVC: Save uploaded file under /uploads with UUID prefix
     API->>Queue: Create Job and metrics record
-    API-->>Gradio: Return job_id and status URL
-    Gradio->>API: Poll /api/v1/ingest/jobs
+    API-->>Frontend: Return task_id and queued document list
+    Frontend->>API: Poll /api/status?task_id=<task_id>
 
     Queue->>Worker: Dequeue job
     Worker->>Docling: Parse PDF, Markdown, or JSON-derived Markdown
@@ -61,38 +61,45 @@ sequenceDiagram
 
 ## Upload And API Stage
 
-The Gradio app is implemented in `gradio_file_ingest/app.py`.
+The React frontend is implemented in `frontend/` and is based on the NVIDIA RAG Blueprint frontend. The FastAPI adapter in `api/frontend_adapter.py` exposes the NVIDIA-compatible `/api/*` contract while the legacy ingest endpoints remain available.
 
 | Runtime config | Live value |
 | --- | --- |
 | `INGEST_API_URL` | `http://ingest-server.default.svc.cluster.local:8000` |
-| Upload endpoint | `/api/v1/ingest/file` |
-| Jobs endpoint | `/api/v1/ingest/jobs` |
-| Poll interval | `3s` |
-| Request timeout | `60s` |
+| Frontend upload endpoint | `/api/documents?blocking=false` |
+| Frontend task endpoint | `/api/status?task_id=<task_id>` |
+| Frontend collections endpoint | `/api/collections` |
+| Legacy upload endpoint | `/api/v1/ingest/file` |
+| Legacy jobs endpoint | `/api/v1/ingest/jobs` |
 
-For each selected file, Gradio:
+For selected files, the React frontend:
 
-- Resolves the local upload path and original filename.
-- Guesses or reads the MIME type.
-- Posts multipart field `file` and form value `source=gradio`.
-- Displays the backend response and refreshes the job dashboard.
+- Posts repeated multipart field `documents`.
+- Posts JSON form field `data` containing `collection_name`, metadata, and frontend options.
+- Receives a `task_id`.
+- Polls `/api/status` and refreshes collections/documents through the NVIDIA frontend stores.
 
 The FastAPI service is implemented in `src/main.py`.
 
-When `POST /api/v1/ingest/file` receives a file, it:
+When `POST /api/documents` receives files, it:
 
-- Sanitizes the filename with `Path(...).name`.
-- Saves the file to `/uploads/<uuid>-<filename>`.
-- Creates a `Job` with `parser_type=docling`, `chunker_type=token`, source metadata, MIME type, size, and stored path.
-- Creates a metrics record for the job.
-- Puts the job in the singleton `LocalQueue`.
-- Returns the job payload, queue name, and `/api/v1/ingest/jobs/<job_id>` status URL.
+- Sanitizes each filename with `Path(...).name`.
+- Saves each file to `/uploads/<uuid>-<filename>`.
+- Creates one normal ingest `Job` per file with `parser_type=docling`, `chunker_type=token`, collection metadata, MIME type, size, task id, and stored path.
+- Creates a metrics record for each job.
+- Puts each job in the singleton `LocalQueue`.
+- Returns the `task_id`, collection name, and queued document payload expected by the NVIDIA frontend.
 
-The jobs endpoints read the in-memory metrics store:
+The frontend adapter and legacy jobs endpoints read the in-memory metrics store:
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /api/collections` | Return the configured Elasticsearch index and any frontend-created collection catalog records |
+| `POST /api/collection` | Register a frontend collection catalog record mapped to this ingest server |
+| `POST /api/documents` | Queue one ingest job per uploaded document |
+| `GET /api/documents?collection_name=...` | List documents from job metrics for a collection |
+| `GET /api/status?task_id=...` | Return NVIDIA task state derived from grouped job metrics |
+| `GET /api/health` / `GET /api/configuration` | Return frontend health and configuration defaults |
 | `GET /api/v1/ingest/jobs` | List jobs, optionally filtered by `status` and `stage` |
 | `GET /api/v1/ingest/jobs/{job_id}` | Return one metrics record |
 
@@ -420,5 +427,5 @@ The agent instruction requires:
 - `INGEST_WORKER_MAX_WORKERS=1` serializes processing, which reduces GPU contention for Docling OCR and model calls.
 - The RAG workflow stored in Elasticsearch is the runtime source of truth. The checked-in `elastic_integration/rag-workflow.yml` may lag the live workflow.
 - `vllm-bge-m3` is scaled to zero. The LiteLLM model `bge-m3-pooling` will not work until that deployment has endpoints.
-- No live Kubernetes `NetworkPolicy` resources are currently applied, even though the repo contains a Gradio-to-ingest NetworkPolicy manifest.
+- No live Kubernetes `NetworkPolicy` resources are currently applied, even though the repo contains a frontend-to-ingest NetworkPolicy manifest.
 - Secret-backed values such as `ELASTIC_API_KEY` are required at runtime but are intentionally not included in this document.

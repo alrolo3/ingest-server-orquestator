@@ -101,27 +101,27 @@ services:
       - exp101_elastic_private
       - exp101_llm_private
 
-  ingest-gradio:
-    image: ingest-server-orquestator:latest
-    container_name: ingest-server-orquestator-gradio
+  ingest-frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    image: ingest-server-orquestator-frontend:latest
+    pull_policy: build
+    container_name: ingest-server-orquestator-frontend
     restart: unless-stopped
     depends_on:
       ingest-api:
         condition: service_started
 
-    command:
-      - python
-      - gradio_file_ingest/app.py
-
     environment:
-      INGEST_API_URL: "${INGEST_GRADIO_API_URL:-http://ingest-api:8000}"
-      INGEST_DOWNLOAD_BASE_URL: "${INGEST_GRADIO_DOWNLOAD_BASE_URL:-}"
-      INGEST_POLL_SECONDS: "${INGEST_POLL_SECONDS:-3}"
-      INGEST_TIMEOUT_SECONDS: "${INGEST_TIMEOUT_SECONDS:-60}"
-      GRADIO_ROOT_PATH: "${INGEST_GRADIO_ROOT_PATH:-}"
+      INGEST_API_URL: "${INGEST_FRONTEND_API_URL:-http://ingest-api:8000}"
+      PORT: "3000"
+
+    ports:
+      - "${INGEST_FRONTEND_PORT:-3000}:3000"
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:7860/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       retries: 5

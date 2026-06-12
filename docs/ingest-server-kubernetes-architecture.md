@@ -24,7 +24,7 @@ Namespaces observed:
 
 | Namespace | Purpose |
 | --- | --- |
-| `default` | ingest app, Gradio app, LiteLLM, vLLM, Elasticsearch, Kibana |
+| `default` | ingest app, React frontend, LiteLLM, vLLM, Elasticsearch, Kibana |
 | `traefik` | Traefik ingress controller |
 | `linkerd` | Linkerd control plane |
 | `linkerd-viz` | Linkerd metrics, tap, Prometheus, web UI |
@@ -44,8 +44,8 @@ flowchart LR
     user --> dns --> traefik --> route
 
     subgraph default_ns[default namespace, Linkerd injected]
-        gradioSvc[Service ingest-gradio:7860]
-        gradioPod[Deployment ingest-gradio<br/>1 replica]
+        frontendSvc[Service ingest-frontend:3000]
+        frontendPod[Deployment ingest-frontend<br/>1 replica]
         ingestSvc[Service ingest-server:8000]
         ingestPod[Deployment ingest-server<br/>1 replica, nvidia runtime]
         litellmSvc[Service inference-service:4000]
@@ -61,7 +61,7 @@ flowchart LR
         vllmRerank[Service vllm-qwen3-reranker-4b:8000]
         vllmBge[Service vllm-bge-m3:8000<br/>0 replicas]
 
-        gradioSvc --> gradioPod --> ingestSvc --> ingestPod
+        frontendSvc --> frontendPod --> ingestSvc --> ingestPod
         ingestPod --> esSvc --> esPods
         ingestPod --> litellmSvc
         kbSvc --> kbPods --> esSvc
@@ -72,7 +72,7 @@ flowchart LR
         litellmPods --> vllmRerank
     end
 
-    route -->|gradio.simona.local| gradioSvc
+    route -->|frontend host| frontendSvc
     route -->|inference.simona.local| litellmSvc
     route -->|kibana.simona.local| kbSvc
 
@@ -111,7 +111,7 @@ The active `IngressRoute/default/simona-apps-ingressroute` uses entrypoint `webs
 | Host | Backend service | Backend port | Notes |
 | --- | --- | --- | --- |
 | `inference.simona.local` | `inference-service` | `4000` | LiteLLM proxy for chat, embeddings, and rerank APIs |
-| `gradio.simona.local` | `ingest-gradio` | `7860` | Public file upload UI |
+| Frontend host | `ingest-frontend` | `3000` | NVIDIA RAG React file upload and collection UI |
 | `kibana.simona.local` | `quickstart-kb-http` | `5601` | HTTPS to ECK Kibana, Traefik `ServersTransport` skips upstream cert verification |
 | `openwebui.simona.local` | `openwebui-service` | `8080` | Route exists, but no matching Service is present in the live namespace |
 
@@ -120,7 +120,7 @@ The route uses Linkerd header middlewares:
 | Middleware | Header target |
 | --- | --- |
 | `l5d-inference-service` | `inference-service.default.svc.cluster.local:4000` |
-| `l5d-gradio-service` | `ingest-gradio.default.svc.cluster.local:7860` |
+| `l5d-frontend-service` | `ingest-frontend.default.svc.cluster.local:3000` |
 | `l5d-kibana-service` | `quickstart-kb-http.default.svc.cluster.local:5601` |
 | `l5d-openwebui-service` | `openwebui-service.default.svc.cluster.local:8080` |
 
@@ -133,20 +133,18 @@ cert-manager status:
 
 ## Application Services
 
-### Gradio Upload UI
+### NVIDIA React Frontend
 
 | Field | Value |
 | --- | --- |
-| Deployment | `default/ingest-gradio` |
+| Deployment | `default/ingest-frontend` |
 | Replicas | `1/1` |
-| Image | `ingest-server-orquestator:latest` |
-| Command | `python gradio_file_ingest/app.py` |
-| Service | `ingest-gradio:7860` |
+| Image | `ingest-server-orquestator-frontend:latest` |
+| Command | `node server.mjs` |
+| Service | `ingest-frontend:3000` |
 | Backend URL | `http://ingest-server.default.svc.cluster.local:8000` |
-| Job poll interval | `3s` |
-| Request timeout | `60s` |
 
-The Gradio app posts multipart uploads to `/api/v1/ingest/file` and polls `/api/v1/ingest/jobs`.
+The React app is based on the NVIDIA RAG Blueprint frontend. It posts multipart uploads to `/api/documents?blocking=false`, polls `/api/status`, reads `/api/collections` and `/api/documents`, and uses `/api/health` plus `/api/configuration` for app status and defaults. The legacy `/api/v1/ingest/file` and `/api/v1/ingest/jobs` endpoints remain available for direct API clients.
 
 ### Ingest API And Worker
 
@@ -158,7 +156,7 @@ The Gradio app posts multipart uploads to `/api/v1/ingest/file` and polls `/api/
 | RuntimeClass | `nvidia` |
 | Command | `python -m uvicorn src.main:app --host 0.0.0.0 --port 8000` |
 | Service | `ingest-server:8000` |
-| Public ingress | None, called internally by Gradio |
+| Public ingress | None, called internally by the React frontend |
 | Upload path | `/uploads` from `ingest-data-pvc` |
 | Markdown output path | `/outputs` from `ingest-data-pvc` |
 | Tokenizer path | `/tokenizer`, read-only from `models-llm-pvc` |
@@ -322,6 +320,6 @@ PersistentVolume reclaim policies observed:
 
 - `openwebui.simona.local` is routed in the IngressRoute, but `openwebui-service` is not present in the live `default` namespace.
 - `vllm-bge-m3` is configured in LiteLLM, but the deployment is scaled to zero, so `bge-m3-pooling` has no backing endpoint until that deployment is scaled up.
-- `kubectl get networkpolicy -A` returned no live NetworkPolicy resources. The checked-in `k8s/ingest-server.yaml` contains a Gradio-to-ingest NetworkPolicy, but it is not currently applied.
+- `kubectl get networkpolicy -A` returned no live NetworkPolicy resources. The checked-in `k8s/ingest-server.yaml` contains a frontend-to-ingest NetworkPolicy, but it is not currently applied.
 - The live `ingest-server-config` differs from older checked-in manifest defaults. The live cluster points ingest traffic to ECK Elasticsearch and LiteLLM service DNS names.
 - Internal ECK HTTP services use TLS. The Traefik `kibana-eck-transport` currently sets `insecureSkipVerify: true` for the Kibana upstream certificate.

@@ -28,8 +28,10 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from api.frontend_adapter import router as frontend_adapter_router
 from config.config import load_server_config
 from config.paths import OUTPUT_DIR, UPLOAD_DIR
 from metrics.store import JobMetricsStore
@@ -133,6 +135,8 @@ async def lifespan(fastapi_app: FastAPI):
     fastapi_app.state.metrics_manager, fastapi_app.state.metrics_store = (
         _build_metrics_store()
     )
+    fastapi_app.state.frontend_collections = {}
+    fastapi_app.state.frontend_deleted_collections = set()
 
     stop_event = Event()
     inbound_worker = InboundWorker(
@@ -162,6 +166,14 @@ async def lifespan(fastapi_app: FastAPI):
     LOGGER.info("Ingest API shutdown complete")
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(frontend_adapter_router)
 
 
 @app.get("/")

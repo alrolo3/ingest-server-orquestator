@@ -27,10 +27,9 @@ RUN python -m pip install --upgrade pip && \
     python -m pip install --no-deps surya-ocr==0.20.0
 
 COPY ingest-server-orquestator/src ./src
-COPY ingest-server-orquestator/gradio_file_ingest ./gradio_file_ingest
 
 RUN mkdir -p /uploads /outputs /tokenizer /docling-models
 
-EXPOSE 8000 7860
+EXPOSE 8000
 
 CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

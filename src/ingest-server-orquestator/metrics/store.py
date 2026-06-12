@@ -28,6 +28,9 @@ class JobMetricsStore:
             parser_type=job.parser_type,
             chunker_type=job.chunker_type,
         ).to_dict()
+        for key in ("collection_name", "task_id"):
+            if input_data.get(key):
+                metrics[key] = input_data[key]
         self._records[job.job_id] = metrics
         return dict(metrics)
 
