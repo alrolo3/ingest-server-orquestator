@@ -107,7 +107,7 @@ steps:
               - standard:
                   query:
                     semantic:
-                      field: content
+                      field: content_dense
                       query: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
 
               - standard:
@@ -260,7 +260,7 @@ steps:
       conversation_context_used: "{{ inputs.conversation_context }}"
       standalone_question: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
       answer_language: "{{ steps.conversation_aware_query_rewrite.output.content.answer_language }}"
-      retrieval_strategy: Conversation-aware standalone query rewrite; semantic-only RRF over dense content, sparse content, sparse clean title, and sparse headings branches; followed by same-page and neighboring-page expansion that always retains first-stage seed hits.
+      retrieval_strategy: Conversation-aware standalone query rewrite; semantic-only RRF over dense content_dense, sparse content, sparse clean title, and sparse headings branches; followed by same-page and neighboring-page expansion that always retains first-stage seed hits.
       documents: "${{ steps.map_expanded_context_hits.output }}"
       initial_rrf_documents: "${{ steps.map_rrf_hits.output }}"
       instruction: Answer the current user question using only documents as grounding context. initial_rrf_documents is diagnostic metadata only and must not be used as answer evidence. Answer in answer_language. If documents are empty or insufficient, say that the available documents do not provide enough information. Cite/reference document titles, clean titles, source file names, and pages when available. Do not invent facts, URLs, citations, page numbers, or details not present in documents.

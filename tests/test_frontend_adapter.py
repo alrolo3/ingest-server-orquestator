@@ -14,6 +14,7 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestat
 sys.path.insert(0, str(SRC_DIR))
 
 from api.frontend_adapter import frontend_collections
+from api.frontend_adapter import frontend_document_summary
 from api.frontend_adapter import frontend_documents
 from api.frontend_adapter import frontend_generate
 from api.frontend_adapter import frontend_task_status
@@ -38,7 +39,10 @@ def _server_config() -> ServerConfig:
     )
 
 
-def _request(store: JobMetricsStore | None = None) -> SimpleNamespace:
+def _request(
+    store: JobMetricsStore | None = None,
+    elasticsearch_client: object | None = None,
+) -> SimpleNamespace:
     return SimpleNamespace(
         app=SimpleNamespace(
             state=SimpleNamespace(
@@ -46,6 +50,7 @@ def _request(store: JobMetricsStore | None = None) -> SimpleNamespace:
                 metrics_store=store or JobMetricsStore(),
                 frontend_collections={},
                 frontend_deleted_collections=set(),
+                elasticsearch_client=elasticsearch_client,
             )
         )
     )
@@ -53,6 +58,61 @@ def _request(store: JobMetricsStore | None = None) -> SimpleNamespace:
 
 def _upload_file(name: str, content: bytes = b"# Sample\n") -> UploadFile:
     return UploadFile(file=BytesIO(content), filename=name)
+
+
+class FakeElasticsearch:
+    def __init__(self, buckets: list[dict[str, object]]) -> None:
+        self.buckets = buckets
+        self.search_calls: list[dict[str, object]] = []
+
+    def search(self, **kwargs: object) -> dict[str, object]:
+        self.search_calls.append(kwargs)
+        return {
+            "aggregations": {
+                "documents": {
+                    "buckets": self.buckets,
+                }
+            }
+        }
+
+
+def _elastic_document_bucket(
+    *,
+    document_id: str = "doc-1",
+    file_name: str = "manual.pdf",
+    collection_name: str = "open-rag-embeddings-v4",
+    task_id: str = "task-1",
+    chunks: int = 3,
+) -> dict[str, object]:
+    return {
+        "key": document_id,
+        "doc_count": chunks,
+        "first_ingested": {"value_as_string": "2026-06-12T10:00:00Z"},
+        "last_ingested": {"value_as_string": "2026-06-12T10:02:00Z"},
+        "total_pages": {"value": 12},
+        "first_chunk": {
+            "hits": {
+                "hits": [
+                    {
+                        "_source": {
+                            "document_id": document_id,
+                            "source_file_name": file_name,
+                            "collection_name": collection_name,
+                            "task_id": task_id,
+                            "source_size_bytes": 2048,
+                            "title": "Manual",
+                            "clean_title": "Manual",
+                            "headings": ["Intro"],
+                            "total_pages": 12,
+                            "content": "Recovered first chunk text.",
+                            "ingested_at": "2026-06-12T10:00:00Z",
+                            "document_metadata": {"department": "ops"},
+                        }
+                    }
+                ]
+            }
+        },
+    }
 
 
 class FrontendAdapterTest(unittest.TestCase):
@@ -113,6 +173,45 @@ class FrontendAdapterTest(unittest.TestCase):
         first_document = documents_response["documents"][0]
         self.assertEqual("one.md", first_document["document_name"])
         self.assertEqual("ops", first_document["metadata"]["department"])
+
+    def test_documents_recover_from_elasticsearch_when_metrics_are_empty(self) -> None:
+        elasticsearch = FakeElasticsearch([_elastic_document_bucket()])
+        request = _request(JobMetricsStore(), elasticsearch_client=elasticsearch)
+
+        collections_response = asyncio.run(frontend_collections(request))
+        collection = collections_response["collections"][0]
+        self.assertEqual("open-rag-embeddings-v4", collection["collection_name"])
+        self.assertEqual(1, collection["collection_info"]["number_of_files"])
+        self.assertEqual(3, collection["num_entities"])
+
+        documents_response = asyncio.run(
+            frontend_documents(request, collection_name="open-rag-embeddings-v4")
+        )
+
+        self.assertEqual(1, documents_response["total_documents"])
+        document = documents_response["documents"][0]
+        self.assertEqual("manual.pdf", document["document_name"])
+        self.assertEqual("doc-1", document["metadata"]["job_id"])
+        self.assertEqual("done", document["metadata"]["status"])
+        self.assertEqual("elasticsearch", document["metadata"]["recovered_from"])
+        self.assertEqual("ops", document["metadata"]["department"])
+        self.assertEqual(3, document["document_info"]["total_elements"])
+        self.assertEqual(12, document["document_info"]["total_pages"])
+
+    def test_summary_recovers_from_elasticsearch_excerpt(self) -> None:
+        elasticsearch = FakeElasticsearch([_elastic_document_bucket()])
+        request = _request(JobMetricsStore(), elasticsearch_client=elasticsearch)
+
+        response = asyncio.run(
+            frontend_document_summary(
+                request,
+                collection_name="open-rag-embeddings-v4",
+                file_name="manual.pdf",
+            )
+        )
+
+        self.assertEqual("SUCCESS", response["status"])
+        self.assertEqual("Recovered first chunk text.", response["summary"])
 
     def test_generate_returns_nvidia_streaming_contract(self) -> None:
         response = asyncio.run(

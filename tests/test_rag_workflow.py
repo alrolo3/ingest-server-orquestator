@@ -11,7 +11,9 @@ class RagWorkflowTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("open-rag-embeddings-v4", workflow)
+        self.assertIn("field: content_dense", workflow)
         self.assertIn("field: content_sparse", workflow)
+        self.assertNotIn("field: content\n", workflow)
         self.assertGreaterEqual(workflow.count("field: clean_title"), 4)
         self.assertGreaterEqual(workflow.count("field: headings"), 4)
         self.assertNotIn("clean_title^", workflow)
@@ -27,8 +29,9 @@ class RagWorkflowTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("open-rag-embeddings-v4", workflow)
-        self.assertIn("field: content\n", workflow)
+        self.assertIn("field: content_dense", workflow)
         self.assertIn("field: content_sparse", workflow)
+        self.assertNotIn("field: content\n", workflow)
         self.assertIn("field: clean_title", workflow)
         self.assertIn("field: headings", workflow)
         self.assertIn("standalone_question", workflow)

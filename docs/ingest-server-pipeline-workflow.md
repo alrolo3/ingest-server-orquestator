@@ -187,15 +187,18 @@ The chunker:
 - Splits any contextualized chunk that still exceeds `512` tokenizer tokens
   into token windows with a `100` token overlap before creating
   `DocumentChunk` records.
-- Copies contextualized chunk text into `content_sparse` for sparse semantic retrieval.
+- Keeps contextualized chunk text in `content` and lets the ingest pipeline copy it
+  into generated `content_dense`, `content_sparse`, and `content_lex.<lang>`
+  search fields.
 - Extracts Docling item references and page numbers from chunk provenance.
 
 Each indexed `DocumentChunk` includes:
 
 | Field | Meaning |
 | --- | --- |
-| `content` | Contextualized chunk text used for retrieval |
-| `content_sparse` | Same contextualized chunk text indexed with sparse semantic inference |
+| `content` | Contextualized chunk text stored in `_source` for returned passages |
+| `content_dense` | Generated dense semantic search copy, excluded from `_source` |
+| `content_sparse` | Generated sparse semantic search copy, excluded from `_source` |
 | `document_id` | The ingest `job_id` |
 | `chunk_id` | `<job_id>-<zero-padded chunk index>` |
 | `chunk_index` | Numeric chunk order |
@@ -253,12 +256,12 @@ The live ingest pipeline is `open_rag_embeddings_v4_multilingual_semantic_pipeli
 flowchart TD
     chunk[DocumentChunk bulk item]
     ts[Set ingested_at]
-    escape[Escape dollar-brace placeholders<br/>in content, content_sparse,<br/>clean_title, and headings]
-    normalize[Normalize helper fields<br/>record_type, clean_title, headings,<br/>content_sparse, searchable, boilerplate,<br/>content_kind, content_length]
+    escape[Escape dollar-brace placeholders<br/>in content, content_dense,<br/>content_sparse, clean_title, and headings]
+    normalize[Normalize helper fields<br/>record_type, clean_title, headings,<br/>content_dense, content_sparse,<br/>searchable, boilerplate,<br/>content_kind, content_length]
     lang[ML inference<br/>lang_ident_model_1]
     route[Route content to one lexical field<br/>content_lex.en/es/fr<br/>default en when unsupported or low confidence]
     remove[Remove temporary fields]
-    semantic[semantic_text fields<br/>dense content plus sparse content/title/headings]
+    semantic[semantic_text fields<br/>dense content_dense plus sparse content/title/headings]
     endpoint[Elastic inference endpoints<br/>dense Qwen3 embedding and sparse multilingual]
     indexed[Indexed RAG chunk]
 
@@ -271,14 +274,14 @@ Pipeline processors:
 | Step | Processor | Effect |
 | --- | --- | --- |
 | 1 | `set` | Adds `ingested_at` from `_ingest.timestamp` if absent |
-| 2 | `script` | Escapes `${` in `content`, `content_sparse`, `clean_title`, and `headings` to avoid custom inference template conflicts |
-| 3 | `script` | Sets `record_type=chunk`, sanitizes filename-style titles into `clean_title`, normalizes `headings`, populates `content_sparse`, sets `content_length`, `searchable=true`, `boilerplate=false`, `content_kind=chunk` |
+| 2 | `script` | Escapes `${` in `content`, `content_dense`, `content_sparse`, `clean_title`, and `headings` to avoid custom inference template conflicts |
+| 3 | `script` | Sets `record_type=chunk`, sanitizes filename-style titles into `clean_title`, normalizes `headings`, populates `content_dense` and `content_sparse`, sets `content_length`, `searchable=true`, `boilerplate=false`, `content_kind=chunk` |
 | 4 | `inference` | Runs `lang_ident_model_1` on `content` |
 | 5 | `script` | Chooses `es`, `en`, or `fr`; defaults to `en` if unsupported or confidence is below `0.60`; copies content into `content_lex.<lang>` |
 | 6 | `remove` | Removes temporary or legacy fields |
 | failure | `set` | Writes failures to `ingest_error` |
 
-The index mapping stores `content` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `bge-m3-sparse`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
+The index mapping stores returned chunk text in `content` as indexed plain text. It stores `content_dense` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `naver-splade-v3`. Large generated fields (`content_dense`, `content_sparse`, and `content_lex.*`) are excluded from `_source` while remaining searchable. Titles and headings remain in `_source`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
 
 ## Kibana Agentic Chat Retrieval
 
@@ -312,7 +315,7 @@ flowchart TD
     lexical2[Lexical branch<br/>original question]
     lexicalEN[English lexical branch]
     lexicalES[Spanish lexical branch]
-    semantic[Semantic branches<br/>dense content plus sparse content/title/headings]
+    semantic[Semantic branches<br/>dense content_dense plus sparse content/title/headings]
     es[Elasticsearch<br/>open-rag-embeddings-v4]
     expand[Same-page and neighboring-page expansion<br/>page_number/page_numbers]
     docs[Grounding documents]
@@ -368,7 +371,7 @@ Retrieval branches:
 | Original lexical | `question_original` | Same multilingual lexical/title fields |
 | English lexical | `query_en` | `content_lex.en`, title/source fields |
 | Spanish lexical | `query_es` | `content_lex.es`, title/source fields |
-| Content semantic | `standalone_question` | `content` semantic_text |
+| Dense content semantic | `standalone_question` | `content_dense` semantic_text |
 | Sparse content semantic | `standalone_question` | `content_sparse` sparse semantic_text |
 | Sparse title semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `clean_title` sparse semantic_text |
 | Sparse heading semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `headings` sparse semantic_text |
@@ -420,7 +423,7 @@ The agent instruction requires:
 | Chunk embedding during indexing | Elasticsearch `semantic_text` inference | LiteLLM `/v1/embeddings` | Create semantic vectors |
 | Embedding backend | LiteLLM | `vllm-qwen3-embedding-4b` | Serve `Qwen3-Embedding-4B` |
 | Query rewrite in workflow | Kibana/Elastic workflow AI prompt | Elastic AI provider configuration | Rewrite user query and produce retrieval variants |
-| Semantic query branch | Elasticsearch | `content` semantic_text | Retrieve semantically similar chunks |
+| Semantic query branch | Elasticsearch | `content_dense` semantic_text | Retrieve semantically similar chunks |
 | Optional rerank endpoint | Elastic inference endpoint `qwen3-reranker-4b` | LiteLLM `/v2/rerank` | Available in cluster, not used by the live RAG workflow |
 
 ## Operational Notes

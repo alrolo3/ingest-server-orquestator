@@ -79,6 +79,7 @@ export interface DocumentInfo {
     chart?: number;
   };
   total_elements?: number;
+  total_pages?: number;
   raw_text_elements_size?: number;
 }
 

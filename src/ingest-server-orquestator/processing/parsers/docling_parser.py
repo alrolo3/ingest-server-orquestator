@@ -57,6 +57,15 @@ _MARKDOWN_MIME_TYPES = {"text/markdown", "text/x-markdown"}
 _MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalized_mime_type(mime_type: str | None) -> str:
     return str(mime_type or "").split(";", 1)[0].strip().lower()
 
@@ -433,20 +442,34 @@ class DoclingParser(AbstractParser):
         }
         if input_format == _JSON_INPUT_FORMAT:
             docling_metadata["preprocessed_format"] = InputFormat.MD.value
+        document_metadata = job.input_data.get("document_metadata")
+        parsed_metadata = (
+            dict(document_metadata) if isinstance(document_metadata, dict) else {}
+        )
+        parsed_metadata["docling"] = docling_metadata
 
         parsed_document = ParsedDocument(
             document_id=job.job_id,
             source_file_name=source_file_name,
             source_path=str(source_path),
+            collection_name=(
+                str(job.input_data["collection_name"])
+                if job.input_data.get("collection_name")
+                else None
+            ),
+            task_id=(
+                str(job.input_data["task_id"])
+                if job.input_data.get("task_id")
+                else None
+            ),
+            source_size_bytes=_optional_int(job.input_data.get("size_bytes")),
             mime_type=mime_type,
             title=_document_title(doc, source_file_name=source_file_name),
             page_count=len(doc.pages),
             #markdown=doc.export_to_markdown(),
             #text=doc.export_to_text(),
             original_out_doc=DoclingOutputDocument(raw=doc),
-            metadata={
-                "docling": docling_metadata,
-            },
+            metadata=parsed_metadata,
         )
         progress.set_total_pages(parsed_document.page_count)
 

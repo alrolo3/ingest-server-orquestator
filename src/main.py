@@ -115,6 +115,19 @@ def _validated_output_path(job: dict[str, Any]) -> Path:
     return resolved_path
 
 
+def _output_path_for_job_id(job_id: str) -> Path | None:
+    output_dir = (OUTPUT_DIR / job_id).resolve()
+    output_root = OUTPUT_DIR.resolve()
+    try:
+        output_dir.relative_to(output_root)
+    except ValueError:
+        return None
+    if not output_dir.is_dir():
+        return None
+    markdown_files = sorted(output_dir.glob("*.md"))
+    return markdown_files[0] if markdown_files else None
+
+
 def _public_job(job: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value
@@ -263,11 +276,15 @@ async def ingest_job(request: Request, job_id: str):
 async def ingest_job_output(request: Request, job_id: str):
     job = request.app.state.metrics_store.get(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job metrics not found")
-
-    path = _validated_output_path(job)
+        path = _output_path_for_job_id(job_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="Job output not found")
+        filename = path.name
+    else:
+        path = _validated_output_path(job)
+        filename = str(job.get("output_file_name") or path.name)
     return FileResponse(
         path=path,
-        filename=str(job.get("output_file_name") or path.name),
+        filename=filename,
         media_type="text/markdown",
     )

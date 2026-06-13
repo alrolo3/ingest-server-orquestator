@@ -9,6 +9,7 @@ sys.path.insert(0, str(SRC_DIR))
 from dispatcher.elastic.elastic import (
     ElasticsearchDispatch,
     OPEN_RAG_PIPELINE,
+    RECOVERABLE_DOCUMENT_FIELD_MAPPINGS,
     build_open_rag_mappings,
 )
 from model.document_chunk import DocumentChunk
@@ -30,7 +31,7 @@ class FakeIndices:
         raise AssertionError("existing index mappings should not be inspected")
 
     def put_mapping(self, **kwargs: object) -> None:
-        raise AssertionError("existing index mappings should not be updated")
+        self.put_mapping_calls.append(kwargs)
 
 
 class FakeClient:
@@ -116,7 +117,7 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         self.assertIn('lastIndexOf("/")', normalization_source)
         self.assertIn('lastIndexOf("\\\\")', normalization_source)
 
-    def test_ensure_index_creates_new_mapping_with_bge_sparse_endpoint(self) -> None:
+    def test_ensure_index_creates_new_mapping_with_splade_sparse_endpoint(self) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
             index_name="rag-index",
             pipeline_name="rag-pipeline",
@@ -135,9 +136,23 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         )
         mappings = calls[0]["mappings"]
         self.assertEqual(build_open_rag_mappings("custom-inference"), mappings)
+        self.assertEqual(
+            {"type": "text"},
+            mappings["properties"]["content"],
+        )
+        self.assertEqual(
+            "custom-inference",
+            mappings["properties"]["content_dense"]["inference_id"],
+        )
+        self.assertIn("content_dense", mappings["_source"]["excludes"])
+        self.assertIn("content_sparse", mappings["_source"]["excludes"])
+        self.assertIn("content_lex.*", mappings["_source"]["excludes"])
+        self.assertNotIn("content", mappings["_source"]["excludes"])
+        self.assertNotIn("clean_title", mappings["_source"]["excludes"])
+        self.assertNotIn("headings", mappings["_source"]["excludes"])
         for field_name in ("content_sparse", "clean_title", "headings"):
             self.assertEqual(
-                "bge-m3-sparse",
+                "naver-splade-v3",
                 mappings["properties"][field_name]["inference_id"],
             )
 
@@ -151,8 +166,16 @@ class ElasticsearchDispatchTest(unittest.TestCase):
 
         dispatch._ensure_index()
 
-        self.assertEqual([], dispatch._client.indices.put_mapping_calls)
         self.assertEqual([], dispatch._client.indices.create_calls)
+        self.assertEqual(
+            [
+                {
+                    "index": "rag-index",
+                    "properties": RECOVERABLE_DOCUMENT_FIELD_MAPPINGS,
+                }
+            ],
+            dispatch._client.indices.put_mapping_calls,
+        )
 
     def test_pipeline_populates_v4_sparse_fields_and_removes_old_fields(self) -> None:
         script_sources = [
@@ -165,12 +188,14 @@ class ElasticsearchDispatchTest(unittest.TestCase):
             source for source in script_sources if "String cleanTitle" in source
         )
 
+        self.assertIn("ctx.content_dense = escapeText(ctx.content_dense)", escape_source)
         self.assertIn("ctx.content_sparse = escapeText(ctx.content_sparse)", escape_source)
         self.assertIn("ctx.clean_title = escapeText(ctx.clean_title)", escape_source)
         self.assertIn("for (def heading : ctx.headings)", escape_source)
         self.assertIn("String cleanedTitle = cleanTitle(ctx.clean_title)", normalization_source)
         self.assertIn("String sourceTitle = cleanTitle(ctx.source_file_name)", normalization_source)
         self.assertIn("ctx.headings = normalizeTextList(ctx.headings)", normalization_source)
+        self.assertIn("ctx.content_dense = ctx.content", normalization_source)
         self.assertIn("ctx.content_sparse = ctx.content", normalization_source)
 
         remove_fields = [

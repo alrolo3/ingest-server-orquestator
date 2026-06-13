@@ -375,6 +375,9 @@ class DoclingChunker(AbstractChunker):
             chunk_id=f"{document.document_id}-{chunk_index:05d}",
             chunk_index=chunk_index,
             chunking_strategy=self.type,
+            collection_name=document.collection_name,
+            task_id=document.task_id,
+            source_size_bytes=document.source_size_bytes,
             content_token_count=content_token_count,
             doc_items=doc_items,
             page_number=page_numbers[0] if page_numbers else None,
@@ -384,4 +387,5 @@ class DoclingChunker(AbstractChunker):
             clean_title=clean_title,
             headings=headings,
             source_file_name=document.source_file_name,
+            document_metadata=document.metadata,
         )

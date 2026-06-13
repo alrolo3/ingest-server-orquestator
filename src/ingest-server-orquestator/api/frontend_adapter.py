@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import shutil
 from collections.abc import AsyncIterator
@@ -28,6 +29,7 @@ from queues.queue_local import put_item
 
 
 router = APIRouter()
+LOGGER = logging.getLogger("ingest-server-orquestator.frontend-adapter")
 
 _DEFAULT_METADATA_SCHEMA = [
     {
@@ -50,6 +52,21 @@ _DEFAULT_METADATA_SCHEMA = [
         "type": "string",
         "description": "Ingest job identifier.",
     },
+]
+
+_ELASTIC_DOCUMENT_SOURCE_FIELDS = [
+    "document_id",
+    "source_file_name",
+    "collection_name",
+    "task_id",
+    "source_size_bytes",
+    "title",
+    "clean_title",
+    "headings",
+    "total_pages",
+    "content",
+    "ingested_at",
+    "document_metadata",
 ]
 
 
@@ -79,6 +96,29 @@ def _state_set(request: Request, name: str) -> set[str]:
         value = set()
         setattr(request.app.state, name, value)
     return value
+
+
+def _elasticsearch_client(request: Request, config: ServerConfig) -> Any | None:
+    state = request.app.state
+    if hasattr(state, "elasticsearch_client"):
+        return getattr(state, "elasticsearch_client")
+    if not config.elastic_hosts:
+        return None
+    try:
+        from elasticsearch import Elasticsearch
+    except ImportError:
+        LOGGER.warning("Elasticsearch client is unavailable; skipping index recovery.")
+        return None
+
+    client = Elasticsearch(
+        hosts=config.elastic_hosts,
+        api_key=config.elastic_api_key,
+        verify_certs=config.elastic_verify_certs,
+        ssl_show_warn=config.elastic_ssl_show_warn,
+        http_compress=config.elastic_http_compress,
+    )
+    setattr(state, "elasticsearch_client", client)
+    return client
 
 
 def _safe_filename(filename: str | None) -> str:
@@ -155,6 +195,213 @@ def _visible_jobs(
     return sorted(jobs, key=lambda job: str(job.get("created_at") or ""))
 
 
+def _collection_filter(collection_name: str, config: ServerConfig) -> dict[str, Any]:
+    if collection_name != config.elastic_index_name:
+        return {"term": {"collection_name": collection_name}}
+    return {
+        "bool": {
+            "should": [
+                {"term": {"collection_name": collection_name}},
+                {"bool": {"must_not": [{"exists": {"field": "collection_name"}}]}},
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+
+
+def _elastic_document_query(
+    config: ServerConfig,
+    *,
+    collection_name: str | None = None,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    filters: list[dict[str, Any]] = []
+    if collection_name:
+        filters.append(_collection_filter(collection_name, config))
+    if task_id:
+        filters.append({"term": {"task_id": task_id}})
+
+    query: dict[str, Any] = {"match_all": {}}
+    if filters:
+        query = {"bool": {"filter": filters}}
+
+    return {
+        "size": 0,
+        "query": query,
+        "aggs": {
+            "documents": {
+                "terms": {
+                    "field": "document_id",
+                    "size": 1000,
+                    "order": {"last_ingested": "desc"},
+                },
+                "aggs": {
+                    "first_chunk": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "chunk_index": {
+                                        "order": "asc",
+                                        "unmapped_type": "integer",
+                                    }
+                                }
+                            ],
+                            "_source": {"includes": _ELASTIC_DOCUMENT_SOURCE_FIELDS},
+                        }
+                    },
+                    "last_ingested": {"max": {"field": "ingested_at"}},
+                    "first_ingested": {"min": {"field": "ingested_at"}},
+                    "total_pages": {"max": {"field": "total_pages"}},
+                },
+            }
+        },
+    }
+
+
+def _response_body(response: Any) -> dict[str, Any]:
+    body = getattr(response, "body", response)
+    return body if isinstance(body, dict) else {}
+
+
+def _date_agg_value(bucket: dict[str, Any], name: str) -> str | None:
+    value = bucket.get(name)
+    if not isinstance(value, dict):
+        return None
+    if value.get("value_as_string"):
+        return str(value["value_as_string"])
+    if value.get("value") is not None:
+        return str(value["value"])
+    return None
+
+
+def _first_hit_source(bucket: dict[str, Any]) -> dict[str, Any]:
+    hits = (
+        bucket.get("first_chunk", {})
+        .get("hits", {})
+        .get("hits", [])
+    )
+    if not hits:
+        return {}
+    source = hits[0].get("_source", {})
+    return source if isinstance(source, dict) else {}
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _elastic_document_jobs(
+    request: Request,
+    config: ServerConfig,
+    *,
+    collection_name: str | None = None,
+    task_id: str | None = None,
+) -> list[dict[str, Any]]:
+    client = _elasticsearch_client(request, config)
+    if client is None:
+        return []
+    try:
+        response = client.search(
+            index=config.elastic_index_name,
+            body=_elastic_document_query(
+                config,
+                collection_name=collection_name,
+                task_id=task_id,
+            ),
+        )
+    except Exception as exc:
+        LOGGER.warning("Failed to recover document state from Elasticsearch: %s", exc)
+        return []
+
+    buckets = (
+        _response_body(response)
+        .get("aggregations", {})
+        .get("documents", {})
+        .get("buckets", [])
+    )
+    jobs = []
+    for bucket in buckets:
+        if not isinstance(bucket, dict):
+            continue
+        source = _first_hit_source(bucket)
+        document_id = str(source.get("document_id") or bucket.get("key") or "")
+        if not document_id:
+            continue
+        file_name = str(
+            source.get("source_file_name")
+            or source.get("clean_title")
+            or source.get("title")
+            or document_id
+        )
+        document_metadata = source.get("document_metadata")
+        total_pages = source.get("total_pages")
+        if isinstance(bucket.get("total_pages"), dict):
+            total_pages = bucket["total_pages"].get("value", total_pages)
+        created_at = _date_agg_value(bucket, "first_ingested") or source.get("ingested_at")
+        finished_at = _date_agg_value(bucket, "last_ingested") or source.get("ingested_at")
+        jobs.append(
+            {
+                "job_id": document_id,
+                "file_name": file_name,
+                "source": "elasticsearch",
+                "status": "done",
+                "stage": "done",
+                "collection_name": str(
+                    source.get("collection_name") or config.elastic_index_name
+                ),
+                "task_id": source.get("task_id"),
+                "size_bytes": _int_or_none(source.get("source_size_bytes")),
+                "created_at": created_at,
+                "updated_at": finished_at,
+                "finished_at": finished_at,
+                "chunks_created": int(bucket.get("doc_count") or 0),
+                "chunks_dispatched": int(bucket.get("doc_count") or 0),
+                "total_pages": _int_or_none(total_pages),
+                "output_url": f"/api/v1/ingest/jobs/{document_id}/output",
+                "document_metadata": (
+                    document_metadata if isinstance(document_metadata, dict) else {}
+                ),
+                "document_excerpt": source.get("content"),
+                "title": source.get("title"),
+                "clean_title": source.get("clean_title"),
+                "headings": source.get("headings") or [],
+                "recovered_from": "elasticsearch",
+            }
+        )
+    return sorted(jobs, key=lambda job: str(job.get("created_at") or ""))
+
+
+def _visible_jobs_for_request(
+    request: Request,
+    *,
+    collection_name: str | None = None,
+    task_id: str | None = None,
+) -> list[dict[str, Any]]:
+    config = _server_config(request)
+    store = _metrics_store(request)
+    memory_jobs = _visible_jobs(store, config, collection_name=collection_name)
+    if task_id:
+        memory_jobs = [job for job in memory_jobs if job.get("task_id") == task_id]
+    elastic_jobs = _elastic_document_jobs(
+        request,
+        config,
+        collection_name=collection_name,
+        task_id=task_id,
+    )
+    merged = {str(job.get("job_id") or ""): job for job in elastic_jobs}
+    for job in memory_jobs:
+        job_id = str(job.get("job_id") or "")
+        if job_id:
+            merged[job_id] = job
+    return sorted(merged.values(), key=lambda job: str(job.get("created_at") or ""))
+
+
 def _collection_status(jobs: list[dict[str, Any]]) -> str:
     if any(job.get("status") == "failed" for job in jobs):
         return "failed"
@@ -210,10 +457,9 @@ def _collection_record(
 
 def _collections(request: Request) -> list[dict[str, Any]]:
     config = _server_config(request)
-    store = _metrics_store(request)
     stored = _state_dict(request, "frontend_collections")
     deleted = _state_set(request, "frontend_deleted_collections")
-    jobs = _visible_jobs(store, config)
+    jobs = _visible_jobs_for_request(request)
     names = {config.elastic_index_name}
     names.update(stored)
     names.update(_job_collection(job, config) for job in jobs)
@@ -243,9 +489,7 @@ def _document_job(
     collection_name: str,
     document_name: str,
 ) -> dict[str, Any] | None:
-    config = _server_config(request)
-    store = _metrics_store(request)
-    for job in _visible_jobs(store, config, collection_name=collection_name):
+    for job in _visible_jobs_for_request(request, collection_name=collection_name):
         if job.get("file_name") == document_name or job.get("job_id") == document_name:
             return job
     return None
@@ -259,6 +503,8 @@ def _document_item(job: dict[str, Any]) -> dict[str, Any]:
         "status": str(job.get("status") or ""),
         "stage": str(job.get("stage") or ""),
     }
+    if job.get("recovered_from"):
+        metadata["recovered_from"] = str(job["recovered_from"])
     if job.get("output_url"):
         metadata["output_url"] = str(job["output_url"])
     document_metadata = job.get("document_metadata")
@@ -270,6 +516,7 @@ def _document_item(job: dict[str, Any]) -> dict[str, Any]:
         "file_size": job.get("size_bytes"),
         "date_created": job.get("created_at"),
         "total_elements": job.get("chunks_created") or 0,
+        "total_pages": job.get("total_pages"),
         "doc_type_counts": {"text": job.get("chunks_created") or 0},
     }
     return {
@@ -277,6 +524,19 @@ def _document_item(job: dict[str, Any]) -> dict[str, Any]:
         "metadata": metadata,
         "document_info": document_info,
     }
+
+
+def _output_path_for_document_id(document_id: str) -> Path | None:
+    output_dir = (OUTPUT_DIR / document_id).resolve()
+    output_root = OUTPUT_DIR.resolve()
+    try:
+        output_dir.relative_to(output_root)
+    except ValueError:
+        return None
+    if not output_dir.is_dir():
+        return None
+    markdown_files = sorted(output_dir.glob("*.md"))
+    return markdown_files[0] if markdown_files else None
 
 
 def _task_state(jobs: list[dict[str, Any]]) -> str:
@@ -496,14 +756,12 @@ async def frontend_documents(
     request: Request,
     collection_name: str = Query(...),
 ) -> dict[str, Any]:
-    config = _server_config(request)
-    store = _metrics_store(request)
     documents = [
         _document_item(job)
-        for job in _visible_jobs(store, config, collection_name=collection_name)
+        for job in _visible_jobs_for_request(request, collection_name=collection_name)
     ]
     return {
-        "message": "Documents fetched from ingest job metrics.",
+        "message": "Documents fetched from ingest state.",
         "total_documents": len(documents),
         "documents": documents,
     }
@@ -543,6 +801,7 @@ async def frontend_upload_documents(
         filename = _safe_filename(document.filename)
         content_type = _content_type(document, filename)
         stored_path, size_bytes = _save_upload(document, filename)
+        document_metadata = _metadata_for_file(payload, filename)
         job = Job.create(
             parser_type="docling",
             input_data={
@@ -553,6 +812,7 @@ async def frontend_upload_documents(
                 "size_bytes": size_bytes,
                 "collection_name": collection_name,
                 "task_id": task_id,
+                "document_metadata": document_metadata,
             },
             chunker_type="token",
             settings={
@@ -567,7 +827,7 @@ async def frontend_upload_documents(
             job.job_id,
             task_id=task_id,
             collection_name=collection_name,
-            document_metadata=_metadata_for_file(payload, filename),
+            document_metadata=document_metadata,
             deleted=False,
         )
         put_item(job)
@@ -639,12 +899,7 @@ async def frontend_task_status(
     task_id: str = Query(...),
 ) -> dict[str, Any]:
     config = _server_config(request)
-    store = _metrics_store(request)
-    jobs = [
-        job
-        for job in _visible_jobs(store, config)
-        if job.get("task_id") == task_id
-    ]
+    jobs = _visible_jobs_for_request(request, task_id=task_id)
     if not jobs:
         raise HTTPException(status_code=404, detail="Task not found")
     return _task_response(task_id, jobs, config)
@@ -686,6 +941,8 @@ async def frontend_document_summary(
         f"Markdown output is available from {job.get('output_url') or 'the job output endpoint'}."
     )
     output_path = job.get("output_path")
+    if not output_path and job.get("job_id"):
+        output_path = _output_path_for_document_id(str(job["job_id"]))
     if output_path:
         path = Path(str(output_path))
         if not path.is_absolute():
@@ -698,6 +955,8 @@ async def frontend_document_summary(
                     summary = excerpt
         except OSError:
             pass
+    elif job.get("document_excerpt"):
+        summary = str(job["document_excerpt"]).strip()
 
     return {
         "summary": summary,
@@ -731,7 +990,6 @@ def _latest_user_message(payload: dict[str, Any]) -> str:
 
 def _chat_answer(request: Request, payload: dict[str, Any]) -> str:
     config = _server_config(request)
-    store = _metrics_store(request)
     selected = payload.get("collection_names")
     if isinstance(selected, list) and selected:
         collection_names = [str(name) for name in selected]
@@ -740,7 +998,7 @@ def _chat_answer(request: Request, payload: dict[str, Any]) -> str:
     jobs = [
         job
         for collection_name in collection_names
-        for job in _visible_jobs(store, config, collection_name=collection_name)
+        for job in _visible_jobs_for_request(request, collection_name=collection_name)
     ]
     done = sum(1 for job in jobs if job.get("status") == "done")
     failed = sum(1 for job in jobs if job.get("status") == "failed")

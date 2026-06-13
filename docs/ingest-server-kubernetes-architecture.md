@@ -277,13 +277,14 @@ The target RAG index is `open-rag-embeddings-v4`.
 
 | Mapping field | Purpose |
 | --- | --- |
-| `content` | `semantic_text` field with inference ID `openai-text_embedding-qwen3-embedding-4b` |
-| `content_sparse` | Chunk content indexed as sparse `semantic_text` with inference ID `bge-m3-sparse` |
-| `clean_title` | Sanitized title indexed as sparse `semantic_text` with inference ID `bge-m3-sparse` |
-| `headings` | Docling heading hierarchy indexed as sparse `semantic_text` with inference ID `bge-m3-sparse` |
-| `content_lex.en` | English BM25 field |
-| `content_lex.es` | Spanish BM25 field |
-| `content_lex.fr` | French BM25 field |
+| `content` | Returned chunk text stored in `_source` and indexed as plain text |
+| `content_dense` | Chunk content indexed as dense `semantic_text` with inference ID `openai-text_embedding-qwen3-embedding-4b`; excluded from `_source` |
+| `content_sparse` | Chunk content indexed as sparse `semantic_text` with inference ID `naver-splade-v3`; excluded from `_source` |
+| `clean_title` | Sanitized title indexed as sparse `semantic_text` with inference ID `naver-splade-v3` |
+| `headings` | Docling heading hierarchy indexed as sparse `semantic_text` with inference ID `naver-splade-v3` |
+| `content_lex.en` | English BM25 field, searchable and excluded from `_source` |
+| `content_lex.es` | Spanish BM25 field, searchable and excluded from `_source` |
+| `content_lex.fr` | French BM25 field, searchable and excluded from `_source` |
 | `document_id` | Upload/job document identifier |
 | `chunk_id` | Stable chunk identifier, also used as Elasticsearch `_id` |
 | `page_number`, `page_numbers` | Page metadata from Docling chunk provenance |

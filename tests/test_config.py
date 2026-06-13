@@ -306,11 +306,21 @@ class ServerConfigTest(unittest.TestCase):
         )
         self.assertEqual(
             "custom-inference",
-            mappings["properties"]["content"]["inference_id"],
+            mappings["properties"]["content_dense"]["inference_id"],
         )
         self.assertEqual(
+            {"type": "text"},
+            mappings["properties"]["content"],
+        )
+        self.assertIn("content_dense", mappings["_source"]["excludes"])
+        self.assertIn("content_sparse", mappings["_source"]["excludes"])
+        self.assertIn("content_lex.*", mappings["_source"]["excludes"])
+        self.assertNotIn("content", mappings["_source"]["excludes"])
+        self.assertNotIn("clean_title", mappings["_source"]["excludes"])
+        self.assertNotIn("headings", mappings["_source"]["excludes"])
+        self.assertEqual(
             {
-                "inference_id": "bge-m3-sparse",
+                "inference_id": "naver-splade-v3",
                 "task_type": "sparse_embedding",
             },
             mappings["_meta"]["sparse_semantic_inference"],
@@ -319,7 +329,7 @@ class ServerConfigTest(unittest.TestCase):
             field_mapping = mappings["properties"][field_name]
             self.assertEqual("semantic_text", field_mapping["type"])
             self.assertEqual(
-                "bge-m3-sparse",
+                "naver-splade-v3",
                 field_mapping["inference_id"],
             )
             self.assertEqual({"strategy": "none"}, field_mapping["chunking_settings"])

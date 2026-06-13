@@ -9,6 +9,9 @@ class ParsedDocument(BaseModel):
     document_id: str
     source_file_name: str
     source_path: str
+    collection_name: str | None = None
+    task_id: str | None = None
+    source_size_bytes: int | None = None
     mime_type: str | None = None
     title: str | None = None
     page_count: int = 0
