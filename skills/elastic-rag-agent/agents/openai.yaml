@@ -1,0 +1,4 @@
+interface:
+  display_name: "Elastic RAG Agent"
+  short_description: "Improve grounded Elastic RAG agents"
+  default_prompt: "Use $elastic-rag-agent to update the grounded RAG agent workflow and retrieval thinking process."

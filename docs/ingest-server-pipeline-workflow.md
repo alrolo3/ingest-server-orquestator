@@ -187,6 +187,9 @@ The chunker:
 - Splits any contextualized chunk that still exceeds `512` tokenizer tokens
   into token windows with a `100` token overlap before creating
   `DocumentChunk` records.
+- Coalesces adjacent chunks below `128` tokenizer tokens when the merged chunk
+  still fits within the configured sparse-token budget. This reduces isolated
+  heading or label chunks while preserving the `512` token hard cap.
 - Keeps contextualized chunk text in `content` and lets the ingest pipeline copy it
   into generated `content_dense`, `content_sparse`, and `content_lex.<lang>`
   search fields.

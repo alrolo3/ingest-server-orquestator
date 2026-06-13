@@ -10,6 +10,7 @@ from config.config import ServerConfig
 from model.base_document import AbstractOutputDocument
 from model.parsed_document import ParsedDocument
 from processing.chunking.docling_chunker import (
+    CHUNK_MIN_TARGET_TOKENS,
     CHUNK_OVERLAP_TOKENS,
     ChunkMarkdownTableSerializer,
     DoclingChunker,
@@ -63,6 +64,25 @@ class FakeMarkdownDocument:
 
     def export_to_markdown(self) -> str:
         return self._markdown
+
+
+def _text_item(ref: str, page_no: int | None, text: str) -> TextItem:
+    prov = []
+    if page_no is not None:
+        prov = [
+            ProvenanceItem(
+                page_no=page_no,
+                bbox=BoundingBox(l=0, t=0, r=1, b=1),
+                charspan=(0, len(text)),
+            )
+        ]
+    return TextItem(
+        self_ref=ref,
+        label=DocItemLabel.TEXT,
+        prov=prov,
+        orig=text,
+        text=text,
+    )
 
 
 class ChunkMarkdownTableSerializerTest(unittest.TestCase):
@@ -150,8 +170,47 @@ class ChunkMarkdownTableSerializerTest(unittest.TestCase):
 
 
 class DoclingChunkerTest(unittest.TestCase):
+    def _chunker_with_chunks(
+        self,
+        doc_chunks: list[DocChunk],
+        *,
+        max_tokens: int = SPARSE_CHUNK_MAX_TOKENS,
+    ) -> DoclingChunker:
+        chunker = DoclingChunker.model_construct(
+            type="token",
+            server_config=ServerConfig(
+                app_name="test",
+                environment="test",
+                inbound_queue_name="queue",
+                worker_max_workers=1,
+                chunk_max_tokens=max_tokens,
+                tokenizer_path=Path("/tmp/tokenizer"),
+                docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+            ),
+        )
+        chunker._chunker = FakeDoclingChunker(doc_chunks)
+        chunker._max_tokens = min(max_tokens, SPARSE_CHUNK_MAX_TOKENS)
+        chunker._chunk_overlap_tokens = min(
+            CHUNK_OVERLAP_TOKENS,
+            max(0, chunker._max_tokens - 1),
+        )
+        return chunker
+
+    def _parsed_document(self) -> ParsedDocument:
+        return ParsedDocument(
+            document_id="doc-1",
+            source_file_name="sample.pdf",
+            source_path="/tmp/sample.pdf",
+            title="Sample document",
+            page_count=12,
+            metadata={"docling": {"parser": "docling", "input_format": "pdf"}},
+            original_out_doc=AbstractOutputDocument(raw=object()),
+        )
+
     def test_sparse_chunk_limit_is_512_tokens_with_100_token_overlap(self) -> None:
         self.assertEqual(512, SPARSE_CHUNK_MAX_TOKENS)
+        self.assertEqual(128, CHUNK_MIN_TARGET_TOKENS)
         self.assertEqual(100, CHUNK_OVERLAP_TOKENS)
         self.assertEqual(SPARSE_CHUNK_MAX_TOKENS, MARKDOWN_SINGLE_CHUNK_MAX_TOKENS)
 
@@ -382,6 +441,105 @@ class DoclingChunkerTest(unittest.TestCase):
         self.assertEqual("Sample markdown", chunk.clean_title)
         self.assertEqual(["Introduction"], chunk.headings)
         self.assertEqual("sample.md", chunk.source_file_name)
+
+    def test_chunk_coalesces_short_adjacent_chunks_to_minimum_target(self) -> None:
+        lead_text = " ".join(f"lead{i}" for i in range(10))
+        body_text = " ".join(f"body{i}" for i in range(130))
+        doc_chunks = [
+            DocChunk(
+                text=lead_text,
+                meta=DocMeta(
+                    doc_items=[_text_item("#/texts/0", 1, lead_text)],
+                    headings=["Section"],
+                ),
+            ),
+            DocChunk(
+                text=body_text,
+                meta=DocMeta(
+                    doc_items=[_text_item("#/texts/1", 2, body_text)],
+                    headings=["Section", "Details"],
+                ),
+            ),
+        ]
+        chunker = self._chunker_with_chunks(doc_chunks)
+
+        chunks = chunker.chunk(self._parsed_document(), NullProgressReporter())
+
+        self.assertEqual(1, len(chunks))
+        chunk = chunks[0]
+        self.assertGreaterEqual(chunk.content_token_count or 0, CHUNK_MIN_TARGET_TOKENS)
+        self.assertLessEqual(chunk.content_token_count or 0, SPARSE_CHUNK_MAX_TOKENS)
+        self.assertIn(
+            f"Section\n{lead_text}\n\nSection\nDetails\n{body_text}",
+            chunk.content,
+        )
+        self.assertEqual(chunk.content, chunk.content_sparse)
+        self.assertEqual(["#/texts/0", "#/texts/1"], chunk.doc_items)
+        self.assertEqual(1, chunk.page_number)
+        self.assertEqual([1, 2], chunk.page_numbers)
+        self.assertEqual(["Section", "Details"], chunk.headings)
+        self.assertEqual("doc-1-00000", chunk.chunk_id)
+        self.assertEqual(0, chunk.chunk_index)
+
+    def test_chunk_merges_short_tail_backward_when_it_fits(self) -> None:
+        body_text = " ".join(f"body{i}" for i in range(130))
+        tail_text = " ".join(f"tail{i}" for i in range(20))
+        doc_chunks = [
+            DocChunk(
+                text=body_text,
+                meta=DocMeta(
+                    doc_items=[_text_item("#/texts/0", 1, body_text)],
+                    headings=["Section"],
+                ),
+            ),
+            DocChunk(
+                text=tail_text,
+                meta=DocMeta(
+                    doc_items=[_text_item("#/texts/1", 1, tail_text)],
+                    headings=["Section"],
+                ),
+            ),
+        ]
+        chunker = self._chunker_with_chunks(doc_chunks)
+
+        chunks = chunker.chunk(self._parsed_document(), NullProgressReporter())
+
+        self.assertEqual(1, len(chunks))
+        chunk = chunks[0]
+        self.assertGreaterEqual(chunk.content_token_count or 0, CHUNK_MIN_TARGET_TOKENS)
+        self.assertLessEqual(chunk.content_token_count or 0, SPARSE_CHUNK_MAX_TOKENS)
+        self.assertTrue(chunk.content.endswith(tail_text))
+        self.assertEqual(["#/texts/0", "#/texts/1"], chunk.doc_items)
+        self.assertEqual([1], chunk.page_numbers)
+
+    def test_chunk_keeps_short_chunk_when_merge_would_exceed_sparse_limit(self) -> None:
+        lead_text = " ".join(f"lead{i}" for i in range(10))
+        body_text = " ".join(f"body{i}" for i in range(SPARSE_CHUNK_MAX_TOKENS - 1))
+        doc_chunks = [
+            DocChunk(
+                text=lead_text,
+                meta=DocMeta(
+                    doc_items=[_text_item("#/texts/0", 1, lead_text)],
+                    headings=["Section"],
+                ),
+            ),
+            DocChunk(
+                text=body_text,
+                meta=DocMeta(
+                    doc_items=[_text_item("#/texts/1", 2, body_text)],
+                    headings=["Section"],
+                ),
+            ),
+        ]
+        chunker = self._chunker_with_chunks(doc_chunks)
+
+        chunks = chunker.chunk(self._parsed_document(), NullProgressReporter())
+
+        self.assertEqual(2, len(chunks))
+        self.assertLess(chunks[0].content_token_count or 0, CHUNK_MIN_TARGET_TOKENS)
+        self.assertLessEqual(chunks[1].content_token_count or 0, SPARSE_CHUNK_MAX_TOKENS)
+        self.assertEqual(["doc-1-00000", "doc-1-00001"], [c.chunk_id for c in chunks])
+        self.assertEqual([0, 1], [c.chunk_index for c in chunks])
 
     def test_chunk_splits_contextualized_content_over_sparse_limit(self) -> None:
         item = TextItem(

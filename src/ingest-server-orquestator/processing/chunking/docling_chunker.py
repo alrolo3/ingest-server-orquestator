@@ -26,6 +26,7 @@ _DECIMAL_NUMBER_RE = re.compile(r"\d+(?:\.\d{3})*,\d+")
 _INTEGER_RE = re.compile(r"\d+")
 _MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
 SPARSE_CHUNK_MAX_TOKENS = 512
+CHUNK_MIN_TARGET_TOKENS = 128
 CHUNK_OVERLAP_TOKENS = 100
 MARKDOWN_SINGLE_CHUNK_MAX_TOKENS = SPARSE_CHUNK_MAX_TOKENS
 _MARKDOWN_INPUT_FORMATS = {"md", "markdown"}
@@ -224,7 +225,7 @@ class DoclingChunker(AbstractChunker):
         doc: ParsedDocument,
         progress: ProgressReporter,
     ) -> list[DocumentChunk]:
-        chunks = self._docling_chunks(doc)
+        chunks = self._coalesce_short_chunks(self._docling_chunks(doc))
         progress.chunks_created(len(chunks))
         return chunks
 
@@ -315,6 +316,112 @@ class DoclingChunker(AbstractChunker):
         if self._within_sparse_limit(stripped):
             return [stripped]
         return [chunk for chunk in self._tokenizer_chunks(stripped) if chunk.strip()]
+
+    def _coalesce_short_chunks(
+        self,
+        chunks: list[DocumentChunk],
+    ) -> list[DocumentChunk]:
+        if len(chunks) < 2:
+            return chunks
+
+        min_target_tokens = min(CHUNK_MIN_TARGET_TOKENS, self._max_tokens)
+        if min_target_tokens <= 0:
+            return chunks
+
+        forward_merged: list[DocumentChunk] = []
+        index = 0
+        while index < len(chunks):
+            current = chunks[index]
+            index += 1
+            while (
+                self._is_short_chunk(current, min_target_tokens)
+                and index < len(chunks)
+                and self._can_merge_chunks(current, chunks[index])
+            ):
+                current = self._merge_chunks(current, chunks[index])
+                index += 1
+            forward_merged.append(current)
+
+        coalesced: list[DocumentChunk] = []
+        for chunk in forward_merged:
+            if (
+                self._is_short_chunk(chunk, min_target_tokens)
+                and coalesced
+                and self._can_merge_chunks(coalesced[-1], chunk)
+            ):
+                coalesced[-1] = self._merge_chunks(coalesced[-1], chunk)
+                continue
+            coalesced.append(chunk)
+
+        return self._renumber_chunks(coalesced)
+
+    def _is_short_chunk(
+        self,
+        chunk: DocumentChunk,
+        min_target_tokens: int,
+    ) -> bool:
+        token_count = self._chunk_token_count(chunk)
+        return token_count is not None and token_count < min_target_tokens
+
+    def _can_merge_chunks(
+        self,
+        left: DocumentChunk,
+        right: DocumentChunk,
+    ) -> bool:
+        merged_content = self._merged_content(left, right)
+        token_count = self._count_tokens(merged_content)
+        return token_count is not None and token_count <= self._max_tokens
+
+    def _merge_chunks(
+        self,
+        left: DocumentChunk,
+        right: DocumentChunk,
+    ) -> DocumentChunk:
+        merged_content = self._merged_content(left, right)
+        page_numbers = sorted(set([*left.page_numbers, *right.page_numbers]))
+        return left.model_copy(
+            update={
+                "content": merged_content,
+                "content_sparse": merged_content,
+                "content_token_count": self._count_tokens(merged_content),
+                "doc_items": self._dedupe([*left.doc_items, *right.doc_items]),
+                "page_number": page_numbers[0] if page_numbers else None,
+                "page_numbers": page_numbers,
+                "headings": self._dedupe([*left.headings, *right.headings]),
+            }
+        )
+
+    @staticmethod
+    def _merged_content(left: DocumentChunk, right: DocumentChunk) -> str:
+        return "\n\n".join(
+            part for part in (left.content.strip(), right.content.strip()) if part
+        )
+
+    def _chunk_token_count(self, chunk: DocumentChunk) -> int | None:
+        if chunk.content_token_count is not None:
+            return chunk.content_token_count
+        return self._count_tokens(chunk.content)
+
+    @staticmethod
+    def _dedupe(values: list[Any]) -> list[Any]:
+        deduped = []
+        for value in values:
+            if value in deduped:
+                continue
+            deduped.append(value)
+        return deduped
+
+    @staticmethod
+    def _renumber_chunks(chunks: list[DocumentChunk]) -> list[DocumentChunk]:
+        return [
+            chunk.model_copy(
+                update={
+                    "chunk_index": chunk_index,
+                    "chunk_id": f"{chunk.document_id}-{chunk_index:05d}",
+                }
+            )
+            for chunk_index, chunk in enumerate(chunks)
+        ]
 
     def _tokenizer_chunks(self, content: str) -> list[str]:
         tokenizer = getattr(self._chunker.tokenizer, "get_tokenizer", lambda: None)()
