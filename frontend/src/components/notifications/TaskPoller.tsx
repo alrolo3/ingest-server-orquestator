@@ -40,6 +40,7 @@ export const TaskPoller = ({ taskId }: TaskPollerProps) => {
   const { updateTaskNotification, getAllNotifications, removeNotification } = useNotificationStore();
   const { data, isLoading, error } = useIngestionTasks(taskId, true);
   const previousStateRef = useRef<string>("PENDING");
+  const previousProgressRef = useRef<string>("");
   const hasInitialized = useRef(false);
   const errorCountRef = useRef(0);
 
@@ -73,18 +74,25 @@ export const TaskPoller = ({ taskId }: TaskPollerProps) => {
       collection_name: data.collection_name || existingTask?.collection_name || "Unknown Collection",
     };
 
-    // Only update on significant changes: state change or initial load
-    // Progress changes (documents_completed incrementing) don't require notification updates
-    // This prevents notification count flickering during document processing
+    const progressSignature = JSON.stringify({
+      message: task.result?.message,
+      documentsCompleted: task.result?.documents_completed,
+      totalDocuments: task.result?.total_documents,
+      documents: task.result?.documents?.map((document) => document.document_id),
+      failedDocuments: task.result?.failed_documents?.map((document) => document.document_name),
+    });
+
     const hasStateChanged = task.state !== previousStateRef.current;
     const isInitialLoad = !hasInitialized.current;
+    const hasProgressChanged = progressSignature !== previousProgressRef.current;
     
-    if (hasStateChanged || isInitialLoad) {
+    if (hasStateChanged || isInitialLoad || hasProgressChanged) {
       hasInitialized.current = true;
       
       // Check if task just completed (state changed from PENDING to something else)
       const justCompleted = previousStateRef.current === "PENDING" && task.state !== "PENDING";
       previousStateRef.current = task.state;
+      previousProgressRef.current = progressSignature;
       
       // Update task with latest data from API
       updateTaskNotification(taskId, task);
