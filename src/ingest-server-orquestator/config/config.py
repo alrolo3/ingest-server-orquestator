@@ -52,6 +52,7 @@ _DOCLING_PICTURE_DESCRIPTION_ENABLED = True
 _DOCLING_PICTURE_CLASSIFICATION_ENABLED = True
 _DOCLING_PICTURE_DESCRIPTION_CONCURRENCY = 16
 _DOCLING_PICTURE_DESCRIPTION_TIMEOUT = 240
+_DOCLING_PICTURE_DESCRIPTION_MODEL = "Qwen3.5-9B"
 _DOCLING_IMAGES_SCALE = 2.0
 _DOCLING_TABLE_MODE = "accurate"
 _DOCLING_CODE_ENRICHMENT_ENABLED = False
@@ -128,6 +129,7 @@ class ServerConfig:
     docling_picture_description_url: str = (
         "http://vllm-qwen35-9b:8007/v1/chat/completions"
     )
+    docling_picture_description_model: str = _DOCLING_PICTURE_DESCRIPTION_MODEL
 
 
 _SERVER_CONFIG: ServerConfig | None = None
@@ -364,6 +366,13 @@ def _load_server_config_from_env() -> ServerConfig:
         docling_picture_description_url=getenv(
             "DOCLING_PICTURE_DESCRIPTION_URL",
             "http://vllm-qwen35-9b:8007/v1/chat/completions",
+        ),
+        docling_picture_description_model=(
+            getenv(
+                "DOCLING_PICTURE_DESCRIPTION_MODEL",
+                _DOCLING_PICTURE_DESCRIPTION_MODEL,
+            ).strip()
+            or _DOCLING_PICTURE_DESCRIPTION_MODEL
         ),
     )
 

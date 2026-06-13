@@ -422,7 +422,7 @@ async def frontend_configuration(request: Request) -> dict[str, Any]:
             "llm_model": "",
             "embedding_model": config.elastic_inference_id,
             "reranker_model": "",
-            "vlm_model": "",
+            "vlm_model": config.docling_picture_description_model,
         },
         "endpoints": {
             "llm_endpoint": "",

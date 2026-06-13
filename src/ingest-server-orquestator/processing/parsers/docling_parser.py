@@ -316,7 +316,7 @@ class DoclingParser(AbstractParser):
                 prompt="Describe the image. Be concise and accurate. If the image is a diagram, generate a mermaid code diagram.",
                 url=AnyUrl(config_server.docling_picture_description_url),
                 params={
-                    "model": "Qwen3.5-9B",
+                    "model": config_server.docling_picture_description_model,
                     "temperature": 0.3,
                     "max_tokens": 16384,
                     "skip_special_tokens": False,

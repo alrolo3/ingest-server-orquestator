@@ -164,7 +164,8 @@ The Docling parser:
 - Can enable Docling code enrichment with `DOCLING_CODE_ENRICHMENT_ENABLED=true`.
 - Enables table structure extraction with accurate TableFormer mode.
 - Enables picture classification and picture description.
-- Sends picture descriptions to LiteLLM with model `Qwen3.5-9B`.
+- Sends picture descriptions to the configured endpoint with model
+  `DOCLING_PICTURE_DESCRIPTION_MODEL` (`Qwen3.5-9B` by default).
 - Produces a `ParsedDocument` containing `document_id`, `source_file_name`, source path, MIME type, title, page count, and the raw Docling document.
 
 ## Chunking Stage

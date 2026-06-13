@@ -404,11 +404,13 @@ test -d /datastore/models/tokenizers/qwen3-embedding-4b
 
 ## Important External Model Service
 
-The app uses `PictureDescriptionApiOptions` and calls the service configured by
-`DOCLING_PICTURE_DESCRIPTION_URL`, currently:
+The app uses `PictureDescriptionApiOptions` and calls the service/model
+configured by `DOCLING_PICTURE_DESCRIPTION_URL` and
+`DOCLING_PICTURE_DESCRIPTION_MODEL`, currently:
 
 ```env
-http://vllm-qwen35-9b:8007/v1/chat/completions
+DOCLING_PICTURE_DESCRIPTION_URL=http://vllm-qwen35-9b:8007/v1/chat/completions
+DOCLING_PICTURE_DESCRIPTION_MODEL=Qwen3.5-9B
 ```
 
 That VLM is not downloaded by this app. Provision its model separately for the

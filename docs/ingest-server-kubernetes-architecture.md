@@ -178,6 +178,7 @@ Live ConfigMap values include:
 | `DOCLING_CODE_ENRICHMENT_ENABLED` | `false` |
 | `DOCLING_SURYA_INFERENCE_URL` | `http://surya-vllm:8000/v1` |
 | `DOCLING_PICTURE_DESCRIPTION_URL` | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
+| `DOCLING_PICTURE_DESCRIPTION_MODEL` | `Qwen3.5-9B` |
 | `ELASTIC_HOSTS` / `ELASTIC_URL` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
 | `ELASTIC_INDEX_NAME` | `open-rag-embeddings-v4` |
 | `ELASTIC_PIPELINE_NAME` | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |

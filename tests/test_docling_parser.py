@@ -156,6 +156,10 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual(16, pipeline_options.picture_description_options.concurrency)
         self.assertEqual(240, pipeline_options.picture_description_options.timeout)
         self.assertEqual(
+            "Qwen3.5-9B",
+            pipeline_options.picture_description_options.params["model"],
+        )
+        self.assertEqual(
             TableFormerMode.ACCURATE,
             pipeline_options.table_structure_options.mode,
         )
@@ -319,6 +323,7 @@ class DoclingParserTest(unittest.TestCase):
                     docling_picture_classification_enabled=False,
                     docling_picture_description_concurrency=2,
                     docling_picture_description_timeout=30,
+                    docling_picture_description_model="custom-vlm",
                     docling_images_scale=1.5,
                     docling_table_mode="fast",
                 ),
@@ -348,6 +353,10 @@ class DoclingParserTest(unittest.TestCase):
         self.assertEqual(1.5, pipeline_options.images_scale)
         self.assertEqual(2, pipeline_options.picture_description_options.concurrency)
         self.assertEqual(30, pipeline_options.picture_description_options.timeout)
+        self.assertEqual(
+            "custom-vlm",
+            pipeline_options.picture_description_options.params["model"],
+        )
         self.assertEqual(TableFormerMode.FAST, pipeline_options.table_structure_options.mode)
 
     def test_docling_ocr_options_supports_mineru(self) -> None:

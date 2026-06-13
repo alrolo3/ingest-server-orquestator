@@ -94,6 +94,7 @@ class ServerConfigTest(unittest.TestCase):
             "http://vllm-qwen35-9b:8007/v1/chat/completions",
             settings.docling_picture_description_url,
         )
+        self.assertEqual("Qwen3.5-9B", settings.docling_picture_description_model)
 
     def test_server_config_constants_ignore_environment(self) -> None:
         env = {
@@ -178,6 +179,7 @@ class ServerConfigTest(unittest.TestCase):
             "ELASTIC_BULK_BATCH_SIZE": "25",
             "ELASTIC_BULK_MAX_RETRIES": "2",
             "DOCLING_PICTURE_DESCRIPTION_URL": "http://vlm:8007/v1/chat/completions",
+            "DOCLING_PICTURE_DESCRIPTION_MODEL": "CustomVLM",
             "DOCLING_OCR_ENABLED": "false",
             "DOCLING_OCR_ENGINE": "auto",
             "DOCLING_OCR_LANGS": "en,es",
@@ -281,6 +283,7 @@ class ServerConfigTest(unittest.TestCase):
             "http://vlm:8007/v1/chat/completions",
             settings.docling_picture_description_url,
         )
+        self.assertEqual("CustomVLM", settings.docling_picture_description_model)
 
     def test_elastic_url_is_single_host_fallback(self) -> None:
         with patch.dict(
