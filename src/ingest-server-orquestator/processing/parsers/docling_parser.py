@@ -30,14 +30,13 @@ from docling.document_converter import (
 )
 from docling_core.types.doc.document import DocItemLabel, DoclingDocument
 from docling_pp_doc_layout.options import PPDocLayoutV3Options
-from pydantic import AnyUrl
+from pydantic import AnyUrl, BaseModel, ConfigDict
 
 from config.config import ServerConfig
 from metrics.progress import ProgressReporter
 from model.base_document import DoclingOutputDocument
 from model.parsed_document import ParsedDocument
 from model.title_normalization import normalize_document_title
-from processing.base_parser import AbstractParser
 from processing.parsers.docling_progress import (
     ProgressReportingStandardPdfPipeline,
     docling_progress,
@@ -267,8 +266,13 @@ def _json_markdown_title(source_file_name: str, source_path: Path) -> str:
     return title or source_path.stem or "JSON document"
 
 
-class DoclingParser(AbstractParser):
+class DoclingParser(BaseModel):
     """Parser implementation backed by Docling."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: str
+    server_config: ServerConfig
 
     def parse(self, job: Job, progress: ProgressReporter) -> ParsedDocument:
 

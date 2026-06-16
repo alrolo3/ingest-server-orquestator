@@ -2,7 +2,7 @@
 version: "1"
 name: RAG query retrieval tool v4 conversation aware
 enabled: true
-description: Multilingual, conversation-aware RAG retrieval workflow for open-rag-embeddings-v4. Rewrites the current user question with recent conversation context into a standalone retrieval query, generates English and Spanish retrieval variants, searches lexical and sparse/dense semantic branches with RRF without hard-filtering document language, expands same-page and neighboring-page context, and returns retrieved chunks for grounded Agent Builder answers.
+description: Semantic-only, conversation-aware RAG retrieval workflow for open-rag-embeddings-v4. Rewrites the current user question with recent conversation context into a standalone retrieval query, searches dense and sparse semantic branches with RRF, expands same-page and neighboring-page context, and returns retrieved chunks for grounded Agent Builder answers.
 
 triggers:
   - type: manual
@@ -34,7 +34,7 @@ steps:
         You rewrite chatbot follow-up questions into standalone retrieval queries.
         You never answer the user's question.
       prompt: |-
-        Rewrite the current user question for retrieval over a multilingual knowledge base.
+        Rewrite the current user question for semantic retrieval over a multilingual knowledge base.
 
         Conversation context:
         {{ inputs.conversation_context }}
@@ -50,10 +50,6 @@ steps:
         - Resolve references like "it", "that", "those", "the previous one", "this document", "the rule", "the second option", and similar follow-up phrasing when the context makes the reference clear.
         - Do not introduce facts, constraints, entities, dates, product names, rules, commands, filenames, URLs, or assumptions not present in the current question or conversation context.
         - Preserve domain-specific names, proper nouns, rules terms, spell names, product names, model names, commands, file names, abbreviations, and exact identifiers.
-        - query_en must be an English lexical/search version optimized for BM25 retrieval.
-        - query_es must be a Spanish lexical/search version optimized for BM25 retrieval.
-        - Use keywords, named entities, exact terms, and likely table/header terms. Keyword style is allowed and often preferred.
-        - Translation is only for retrieval recall. Do not use language to filter documents.
         - answer_language must be the language the final answer should use, using "en" or "es". Prefer the user's current question language.
       schema:
         type: object
@@ -63,10 +59,6 @@ steps:
             type: string
           standalone_question:
             type: string
-          query_en:
-            type: string
-          query_es:
-            type: string
           answer_language:
             type: string
             enum:
@@ -75,11 +67,9 @@ steps:
         required:
           - question_original
           - standalone_question
-          - query_en
-          - query_es
           - answer_language
-# TODO: add reranking phase if and when it is enabled.
-  - name: rrf_multilingual_retrieval
+
+  - name: rrf_sparse_dense_retrieval
     type: elasticsearch.request
     with:
       method: POST
@@ -100,7 +90,6 @@ steps:
           - page_start
           - page_end
           - source_file_name
-          - language
           - content_kind
           - chunk_quality
         retriever:
@@ -115,70 +104,6 @@ steps:
               - term:
                   boilerplate: false
             retrievers:
-              - standard:
-                  query:
-                    multi_match:
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
-                      fields:
-                        - content_lex.en^2
-                        - content_lex.default
-                        - content_lex.es^2
-                        - content_lex.fr^2
-                        - content_lex.de^2
-                        - content_lex.it^2
-                        - content_lex.pt^2
-                        - content_lex.ca^2
-                        - content_lex.gl^2
-                        - title^5
-                        - source_file_name.text^0.2
-                      type: best_fields
-                      operator: or
-                      minimum_should_match: "2<40%"
-
-              - standard:
-                  query:
-                    multi_match:
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.question_original }}"
-                      fields:
-                        - content_lex.en
-                        - content_lex.default
-                        - content_lex.es
-                        - content_lex.fr
-                        - content_lex.de
-                        - content_lex.it
-                        - content_lex.pt
-                        - content_lex.ca
-                        - content_lex.gl
-                        - title^4
-                        - source_file_name.text^0.2
-                      type: best_fields
-                      operator: or
-                      minimum_should_match: "2<40%"
-
-              - standard:
-                  query:
-                    multi_match:
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
-                      fields:
-                        - content_lex.en^3
-                        - title^5
-                        - source_file_name.text^0.2
-                      type: best_fields
-                      operator: or
-                      minimum_should_match: "2<40%"
-
-              - standard:
-                  query:
-                    multi_match:
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
-                      fields:
-                        - content_lex.es^3
-                        - title^5
-                        - source_file_name.text^0.2
-                      type: best_fields
-                      operator: or
-                      minimum_should_match: "2<40%"
-
               - standard:
                   query:
                     semantic:
@@ -200,48 +125,12 @@ steps:
               - standard:
                   query:
                     semantic:
-                      field: clean_title
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.question_original }}"
-
-              - standard:
-                  query:
-                    semantic:
-                      field: clean_title
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
-
-              - standard:
-                  query:
-                    semantic:
-                      field: clean_title
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
-
-              - standard:
-                  query:
-                    semantic:
                       field: headings
                       query: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
 
-              - standard:
-                  query:
-                    semantic:
-                      field: headings
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.question_original }}"
-
-              - standard:
-                  query:
-                    semantic:
-                      field: headings
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
-
-              - standard:
-                  query:
-                    semantic:
-                      field: headings
-                      query: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
-
   - name: map_rrf_hits
     type: data.map
-    items: "${{ steps.rrf_multilingual_retrieval.output.hits.hits }}"
+    items: "${{ steps.rrf_sparse_dense_retrieval.output.hits.hits }}"
     with:
       fields:
         elastic_id: "{{ item._id }}"
@@ -254,7 +143,6 @@ steps:
         clean_title: "{{ item._source.clean_title }}"
         headings: "${{ item._source.headings }}"
         source_file_name: "{{ item._source.source_file_name }}"
-        language: "{{ item._source.language }}"
         page_number: "{{ item._source.page_number }}"
         page_numbers: "${{ item._source.page_numbers }}"
         page_start: "{{ item._source.page_start }}"
@@ -287,7 +175,6 @@ steps:
             "page_start",
             "page_end",
             "source_file_name",
-            "language",
             "content_kind",
             "chunk_quality"
           ],
@@ -299,7 +186,7 @@ steps:
                 { "term": { "boilerplate": false } }
               ],
               "should": [
-                {% for hit in steps.rrf_multilingual_retrieval.output.hits.hits %}
+                {% for hit in steps.rrf_sparse_dense_retrieval.output.hits.hits %}
                 {
                   "ids": {
                     "values": [
@@ -356,7 +243,6 @@ steps:
         headings: "${{ item._source.headings }}"
         content: "{{ item._source.content }}"
         source_file_name: "{{ item._source.source_file_name }}"
-        language: "{{ item._source.language }}"
         page_number: "{{ item._source.page_number }}"
         page_numbers: "${{ item._source.page_numbers }}"
         page_start: "{{ item._source.page_start }}"
@@ -370,10 +256,8 @@ steps:
       question: "{{ inputs.question }}"
       conversation_context_used: "{{ inputs.conversation_context }}"
       standalone_question: "{{ steps.conversation_aware_query_rewrite.output.content.standalone_question }}"
-      query_en: "{{ steps.conversation_aware_query_rewrite.output.content.query_en }}"
-      query_es: "{{ steps.conversation_aware_query_rewrite.output.content.query_es }}"
       answer_language: "{{ steps.conversation_aware_query_rewrite.output.content.answer_language }}"
-      retrieval_strategy: Conversation-aware standalone query rewrite; RRF over standalone multilingual lexical, original question lexical, English lexical, Spanish lexical, dense content_dense semantic, sparse content semantic, sparse clean title, and sparse headings branches; followed by same-page and neighboring-page expansion that always retains first-stage seed hits. Language is used for recall variants, not filtering.
+      retrieval_strategy: Conversation-aware standalone query rewrite; semantic-only RRF over dense content_dense, sparse content, sparse clean title, and sparse headings branches; followed by same-page and neighboring-page expansion that always retains first-stage seed hits.
       documents: "${{ steps.map_expanded_context_hits.output }}"
       initial_rrf_documents: "${{ steps.map_rrf_hits.output }}"
       instruction: Answer the current user question using only documents as grounding context. initial_rrf_documents is diagnostic metadata only and must not be used as answer evidence. Answer in answer_language. If documents are empty, insufficient, or missing the user's critical keywords, follow the agent retry policy by reformulating the retrieval question while preserving exact critical keywords; after retries fail, say that the available documents do not provide enough information. Cite/reference document titles, clean titles, source file names, and pages when available. Do not invent facts, URLs, citations, page numbers, or details not present in documents.

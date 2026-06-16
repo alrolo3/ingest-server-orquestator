@@ -10,14 +10,13 @@ from config.paths import (
     DOCLING_PP_LAYOUT_MODEL_PATH,
     TOKENIZER_PATH,
 )
-from queues.queue_local import LocalQueue
 
 
 _DEFAULT_ELASTIC_HOSTS = ["https://localhost:9200"]
 _DEFAULT_ELASTIC_API_KEY = (
     "RW9RbG1aNEJ4QVZwbFVaNjNhOEc6QTY1b1V2cDU4MUUxWHZjeTkxTkx4UQ=="
 )
-_DEFAULT_ELASTIC_INFERENCE_ID = "qwen3-embedding-4b"
+_DEFAULT_ELASTIC_INFERENCE_ID = "openai-text_embedding-octen-embedding-4b"
 _APP_NAME = "ingest-server-orquestator"
 _INBOUND_QUEUE_NAME = "inbound"
 _WORKER_MAX_WORKERS = 1
@@ -382,7 +381,6 @@ def load_server_config() -> ServerConfig:
 
     if _SERVER_CONFIG is None:
         _SERVER_CONFIG = _load_server_config_from_env()
-        LocalQueue()
 
     return _SERVER_CONFIG
 

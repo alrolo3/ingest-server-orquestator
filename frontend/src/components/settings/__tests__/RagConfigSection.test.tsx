@@ -53,11 +53,14 @@ const findSliderByLabel = (labelText: string) => {
 };
 
 const mockUseSettingsStore = vi.fn();
-const mockUseServerDefaultsStore = vi.fn();
+const mockUseServerConfiguration = vi.fn();
 
 vi.mock('../../../store/useSettingsStore', () => ({
-  useSettingsStore: () => mockUseSettingsStore(),
-  useServerDefaultsStore: () => mockUseServerDefaultsStore()
+  useSettingsStore: () => mockUseSettingsStore()
+}));
+
+vi.mock('../../../api/useConfigurationApi', () => ({
+  useServerConfiguration: () => mockUseServerConfiguration()
 }));
 
 describe('RagConfigSection', () => {
@@ -74,11 +77,7 @@ describe('RagConfigSection', () => {
       maxTokens: 1000,
       set: mockSetSettings
     });
-    mockUseServerDefaultsStore.mockReturnValue({
-      config: null,
-      isLoading: false,
-      error: null
-    });
+    mockUseServerConfiguration.mockReturnValue({ data: null });
   });
 
   describe('Temperature Control', () => {

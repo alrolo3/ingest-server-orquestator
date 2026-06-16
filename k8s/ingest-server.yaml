@@ -48,7 +48,7 @@ data:
   ELASTIC_HOSTS: https://elasticsearch-gpu-indexer:9200
   ELASTIC_INDEX_NAME: open-rag-embeddings-v4
   ELASTIC_PIPELINE_NAME: open_rag_embeddings_v4_multilingual_semantic_pipeline
-  ELASTIC_INFERENCE_ID: qwen3-embedding-4b
+  ELASTIC_INFERENCE_ID: openai-text_embedding-octen-embedding-4b
   ELASTIC_VERIFY_CERTS: "false"
   ELASTIC_SSL_SHOW_WARN: "false"
   ELASTIC_HTTP_COMPRESS: "true"

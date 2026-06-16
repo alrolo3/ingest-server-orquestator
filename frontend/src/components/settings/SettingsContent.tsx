@@ -20,13 +20,13 @@ import { FeatureTogglesSection } from './FeatureTogglesSection';
 import { ModelsSection } from './ModelsSection';
 import { EndpointsSection } from './EndpointsSection';
 import { AdvancedSection } from './AdvancedSection';
-import { 
-  RagIcon, 
-  FeaturesIcon, 
-  ModelsIcon, 
-  EndpointsIcon, 
-  AdvancedIcon 
-} from '../icons';
+import {
+  FileText,
+  Link as LinkIcon,
+  Monitor,
+  Settings,
+  SlidersHorizontal,
+} from "lucide-react";
 
 interface SettingsContentProps {
   activeSection: string;
@@ -43,7 +43,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
         return (
           <Panel
             slotHeading="RAG Configuration"
-            slotIcon={<RagIcon className="w-6 h-6" />}
+            slotIcon={<FileText className="w-6 h-6" />}
             elevation="mid"
             density="standard"
           >
@@ -60,7 +60,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
         return (
           <Panel
             slotHeading="Feature Toggles"
-            slotIcon={<FeaturesIcon className="w-6 h-6" />}
+            slotIcon={<SlidersHorizontal className="w-6 h-6" />}
             elevation="mid"
             density="standard"
           >
@@ -77,7 +77,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
         return (
           <Panel
             slotHeading="Model Configuration"
-            slotIcon={<ModelsIcon className="w-6 h-6" />}
+            slotIcon={<Monitor className="w-6 h-6" />}
             elevation="mid"
             density="standard"
           >
@@ -94,7 +94,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
         return (
           <Panel
             slotHeading="Endpoint Configuration"
-            slotIcon={<EndpointsIcon className="w-6 h-6" />}
+            slotIcon={<LinkIcon className="w-6 h-6" />}
             elevation="mid"
             density="standard"
           >
@@ -111,7 +111,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
         return (
           <Panel
             slotHeading="Other Settings"
-            slotIcon={<AdvancedIcon className="w-6 h-6" />}
+            slotIcon={<Settings className="w-6 h-6" />}
             elevation="mid"
             density="standard"
           >
@@ -128,7 +128,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({
         return (
           <Panel
             slotHeading="RAG Configuration"
-            slotIcon={<RagIcon className="w-6 h-6" />}
+            slotIcon={<FileText className="w-6 h-6" />}
             elevation="mid"
             density="standard"
           >

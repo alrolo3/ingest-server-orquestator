@@ -6,12 +6,7 @@ from pydantic import BaseModel
 
 class AbstractOutputDocument(BaseModel):
     raw: Any
-    pass
 
 
 class DoclingOutputDocument(AbstractOutputDocument):
     raw: DoclingDocument  # DoclingDocument
-
-
-class MinerUOutputDocument(AbstractOutputDocument):
-    raw: Any  # MinerU document/result

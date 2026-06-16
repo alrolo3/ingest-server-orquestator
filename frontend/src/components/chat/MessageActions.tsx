@@ -17,15 +17,10 @@ import { useSendMessage } from "../../api/useSendMessage";
 import { useStreamingStore } from "../../store/useStreamingStore";
 import { useMessageSubmit } from "../../hooks/useMessageSubmit";
 import { Button, Block, Flex, Spinner } from "@kui/react";
+import { Send } from "lucide-react";
 
 const StopIcon = () => (
   <div style={{ width: '8px', height: '8px', backgroundColor: 'currentColor', borderRadius: '2px' }} />
-);
-
-const SendIcon = () => (
-  <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-  </svg>
 );
 
 const StopButton = () => {
@@ -57,7 +52,7 @@ const SendButton = () => {
         </Flex>
       );
     }
-    return <SendIcon />;
+    return <Send size={14} />;
   };
 
   const getButtonTitle = () => {

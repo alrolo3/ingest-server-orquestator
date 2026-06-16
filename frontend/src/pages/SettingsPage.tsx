@@ -13,19 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { useMemo } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import { VerticalNav, Flex, PageHeader, Divider, Block } from "@kui/react";
-import { useSettingsSections } from "../hooks/useSettingsSections";
+import {
+  FileText,
+  Link as LinkIcon,
+  Monitor,
+  Settings,
+  SlidersHorizontal,
+} from "lucide-react";
 import { useFeatureWarning } from "../hooks/useFeatureWarning";
 import { SettingsContent } from "../components/settings/SettingsContent";
 import { FeatureWarningModal } from "../components/modals/FeatureWarningModal";
-import { 
-  ICON_rag, 
-  ICON_features, 
-  ICON_models, 
-  ICON_endpoints, 
-  ICON_advanced 
-} from "../components/icons";
 
 /**
  * Settings page component providing comprehensive application configuration.
@@ -36,19 +35,19 @@ import {
  * @returns Settings page using KUI design system components
  */
 export default function SettingsPage() {
-  const { activeSection, setSection } = useSettingsSections();
+  const [activeSection, setSection] = useState("ragConfig");
   const { showModal, showWarning, confirmChange, cancelChange } = useFeatureWarning();
 
   const navigationItems = useMemo(() => [
     {
       id: 'ragConfig',
       slotLabel: 'RAG Configuration',
-      slotIcon: <ICON_rag />,
+      slotIcon: <FileText />,
       active: activeSection === 'ragConfig',
       href: '#ragConfig',
       attributes: {
         VerticalNavLink: {
-          onClick: (e: React.MouseEvent) => {
+          onClick: (e: MouseEvent) => {
             e.preventDefault();
             setSection('ragConfig');
           }
@@ -58,12 +57,12 @@ export default function SettingsPage() {
     {
       id: 'features',
       slotLabel: 'Feature Toggles',
-      slotIcon: <ICON_features />,
+      slotIcon: <SlidersHorizontal />,
       active: activeSection === 'features',
       href: '#features',
       attributes: {
         VerticalNavLink: {
-          onClick: (e: React.MouseEvent) => {
+          onClick: (e: MouseEvent) => {
             e.preventDefault();
             setSection('features');
           }
@@ -73,12 +72,12 @@ export default function SettingsPage() {
     {
       id: 'models',
       slotLabel: 'Model Configuration',
-      slotIcon: <ICON_models />,
+      slotIcon: <Monitor />,
       active: activeSection === 'models',
       href: '#models',
       attributes: {
         VerticalNavLink: {
-          onClick: (e: React.MouseEvent) => {
+          onClick: (e: MouseEvent) => {
             e.preventDefault();
             setSection('models');
           }
@@ -88,12 +87,12 @@ export default function SettingsPage() {
     {
       id: 'endpoints',
       slotLabel: 'Endpoint Configuration',
-      slotIcon: <ICON_endpoints />,
+      slotIcon: <LinkIcon />,
       active: activeSection === 'endpoints',
       href: '#endpoints',
       attributes: {
         VerticalNavLink: {
-          onClick: (e: React.MouseEvent) => {
+          onClick: (e: MouseEvent) => {
             e.preventDefault();
             setSection('endpoints');
           }
@@ -103,12 +102,12 @@ export default function SettingsPage() {
     {
       id: 'advanced',
       slotLabel: 'Other Settings',
-      slotIcon: <ICON_advanced />,
+      slotIcon: <Settings />,
       active: activeSection === 'advanced',
       href: '#advanced',
       attributes: {
         VerticalNavLink: {
-          onClick: (e: React.MouseEvent) => {
+          onClick: (e: MouseEvent) => {
             e.preventDefault();
             setSection('advanced');
           }

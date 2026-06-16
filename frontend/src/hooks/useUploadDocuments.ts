@@ -15,11 +15,9 @@
 
 import { useState } from "react";
 import { useNotificationStore } from "../store/useNotificationStore";
-import { useCollectionConfigStore } from "../store/useCollectionConfigStore";
 
 export function useUploadDocuments() {
   const { addTaskNotification } = useNotificationStore();
-  const { getConfig } = useCollectionConfigStore();
   const [isPending, setIsPending] = useState(false);
 
   const mutate = (data: { files: File[]; metadata: Record<string, unknown> }, options: { onSuccess?: (data: unknown) => void; onError?: (error: Error) => void }) => {
@@ -29,11 +27,7 @@ export function useUploadDocuments() {
       formData.append("documents", file);
     });
     
-    // Get collection-specific config for summarization setting
-    const collectionName = String(data.metadata.collection_name);
-    const collectionConfig = getConfig(collectionName);
-    
-    formData.append("data", JSON.stringify({ ...data.metadata, generate_summary: collectionConfig.generateSummary }));
+    formData.append("data", JSON.stringify({ ...data.metadata, generate_summary: true }));
 
     fetch(`/api/documents?blocking=false`, {
       method: "POST",

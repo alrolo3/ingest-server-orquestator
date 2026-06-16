@@ -186,7 +186,6 @@ export const useNewCollectionStore = create<NewCollectionState>((set, get) => ({
   },
 
   setFiles: (files) => {
-    console.log('🟢 Store: setFiles called with', files.length, 'files');
     const { metadataSchema } = get();
     const fileMetadata: Record<string, Record<string, unknown>> = {};
 
@@ -201,7 +200,6 @@ export const useNewCollectionStore = create<NewCollectionState>((set, get) => ({
       selectedFiles: files,
       fileMetadata,
     });
-    console.log('🟢 Store: selectedFiles is now', get().selectedFiles.length, 'files');
   },
 
   removeFile: (index) => {

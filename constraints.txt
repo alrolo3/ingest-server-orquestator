@@ -1,0 +1,16 @@
+beautifulsoup4==4.15.0
+docling-ibm-models==3.13.2
+docling-parse==6.2.0
+docling-slim==2.96.1
+filelock==3.29.1
+filetype==1.2.0
+huggingface_hub==1.17.0
+openai==1.109.1
+opencv-python-headless==4.11.0.86
+pillow==10.4.0
+platformdirs==4.10.0
+pydantic-settings==2.14.1
+pypdfium2==4.30.0
+python-dotenv==1.2.2
+requests==2.34.2
+torchvision==0.27.0

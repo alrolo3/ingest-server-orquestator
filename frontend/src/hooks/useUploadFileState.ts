@@ -102,7 +102,6 @@ export const useUploadFileState = ({
       const allValidFiles = updatedFiles
         .filter(f => f.status !== 'error')
         .map(f => f.file);
-      console.log('🔵 useUploadFileState: calling onFilesChange with', allValidFiles.length, 'files');
       onFilesChange?.(allValidFiles);
       
       return updatedFiles;

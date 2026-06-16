@@ -10,7 +10,7 @@ from config.config import ServerConfig, get_server_config
 from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
 from metrics.store import JobMetricsStore
-from queues.queue_local import LocalQueue
+from queues.queue_local import local_queue
 from queues.domain.job import Job
 from workers.job_runner import job_runner
 
@@ -26,7 +26,7 @@ class InboundWorker:
         server_config: ServerConfig | None = None,
     ) -> None:
         self.stop_event = stop_event
-        self.queue = LocalQueue()
+        self.queue = local_queue
         self.metrics_store = metrics_store
         self.server_config = server_config or get_server_config()
         self.executor_slots = BoundedSemaphore(self.server_config.worker_max_workers)
@@ -73,11 +73,11 @@ class InboundWorker:
                 future = self.process_pool.submit(job_runner, job, self.metrics_store)
             except Exception:
                 self.executor_slots.release()
-                self.queue.queue.task_done()
+                self.queue.task_done()
                 raise
 
             future.add_done_callback(lambda _: self.executor_slots.release())
-            future.add_done_callback(lambda _: self.queue.queue.task_done())
+            future.add_done_callback(lambda _: self.queue.task_done())
             future.add_done_callback(
                 lambda completed_future, queued_job=job: self._on_job_done(
                     queued_job,

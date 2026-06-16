@@ -25,7 +25,7 @@ from config.paths import OUTPUT_DIR
 from config.paths import UPLOAD_DIR
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
-from queues.queue_local import put_item
+from queues.queue_local import local_queue
 
 
 router = APIRouter()
@@ -830,7 +830,7 @@ async def frontend_upload_documents(
             document_metadata=document_metadata,
             deleted=False,
         )
-        put_item(job)
+        local_queue.put(job)
         queued_documents.append(
             {
                 "document_id": job.job_id,

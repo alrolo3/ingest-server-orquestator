@@ -28,14 +28,6 @@ vi.mock('../../../hooks/useCitationUtils', () => ({
 }));
 
 // Mock child components to focus on CitationItem logic
-vi.mock('../CitationBadge', () => ({
-  CitationBadge: ({ number }: { number: number }) => <div data-testid="citation-badge">{number}</div>
-}));
-
-vi.mock('../CitationScore', () => ({
-  CitationScore: ({ score }: { score: number }) => <div data-testid="citation-score">{score}</div>
-}));
-
 vi.mock('../CitationVisualContent', () => ({
   CitationVisualContent: ({ documentType }: { documentType: string }) => (
     <div data-testid="visual-content">Visual: {documentType}</div>

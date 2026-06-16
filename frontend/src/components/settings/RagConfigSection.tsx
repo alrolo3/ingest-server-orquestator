@@ -14,7 +14,8 @@
 // limitations under the License.
 
 import { Stack } from "@kui/react";
-import { useSettingsStore, useServerDefaultsStore } from "../../store/useSettingsStore";
+import { useSettingsStore } from "../../store/useSettingsStore";
+import { useServerConfiguration } from "../../api/useConfigurationApi";
 import { SettingSlider, SettingInput } from "./SettingControls";
 import { useCallback } from "react";
 
@@ -38,7 +39,7 @@ export const RagConfigSection = () => {
   } = useSettingsStore();
 
   // Get server defaults for accurate display values
-  const { config: serverDefaults } = useServerDefaultsStore();
+  const { data: serverDefaults } = useServerConfiguration();
   const defaults = serverDefaults?.rag_configuration;
 
   // Simple handlers - directly set values when user interacts

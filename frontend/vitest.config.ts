@@ -23,7 +23,7 @@ export default mergeConfig(
       },
       server: {
         deps: {
-          inline: ['@kui/react', '@kui/foundations']
+          inline: ['@kui/react']
         }
       },
       coverage: {

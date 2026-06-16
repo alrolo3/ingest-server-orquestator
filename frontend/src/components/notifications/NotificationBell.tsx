@@ -25,7 +25,6 @@ import type { TaskNotification } from "../../types/notifications";
  * Global reference to notification panel control functions for external access.
  */
 let globalNotificationOpen: (() => void) | null = null;
-let globalNotificationToggle: (() => void) | null = null;
 
 /**
  * Global function to open the notification panel from anywhere in the application.
@@ -41,16 +40,6 @@ let globalNotificationToggle: (() => void) | null = null;
 export const openNotificationPanel = () => {
   if (globalNotificationOpen) {
     globalNotificationOpen();
-  }
-};
-
-/**
- * Global function to toggle the notification panel from anywhere in the application.
- */
-/* eslint-disable-next-line react-refresh/only-export-components */
-export const toggleNotificationPanel = () => {
-  if (globalNotificationToggle) {
-    globalNotificationToggle();
   }
 };
 
@@ -89,13 +78,11 @@ export default function NotificationBell() {
     }
   }, [hydrate, cleanupDuplicates]);
 
-  // Set global references for external access (open and toggle)
+  // Set global reference for external access.
   useEffect(() => {
     globalNotificationOpen = () => setIsOpen(true);
-    globalNotificationToggle = () => setIsOpen(prev => !prev);
     return () => {
       globalNotificationOpen = null;
-      globalNotificationToggle = null;
     };
   }, []);
 

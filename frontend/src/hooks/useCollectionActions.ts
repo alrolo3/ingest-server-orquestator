@@ -119,11 +119,6 @@ export function useCollectionActions() {
   const handleUploadDocuments = () => {
     if (!activeCollection?.collection_name || !selectedFiles.length) return;
 
-    console.log("🚀 Starting add source upload:", { 
-      collection: activeCollection.collection_name, 
-      fileCount: selectedFiles.length 
-    });
-
     // Helper function to process metadata values based on field type
     const processMetadataValue = (key: string, value: unknown) => {
       // Find the field definition in the collection's metadata schema
@@ -237,22 +232,18 @@ export function useCollectionActions() {
     uploadDocuments.mutate(
       { files: selectedFiles, metadata },
       {
-        onSuccess: (data) => {
-          console.log("✅ Add source upload successful:", data);
-          
+        onSuccess: () => {
           // Invalidate collections to refresh file counts
           queryClient.invalidateQueries({ queryKey: ["collections"] });
           queryClient.invalidateQueries({ queryKey: ["collection-documents", activeCollection?.collection_name] });
           
           // Reset upload state and close drawer immediately
-          console.log("🧹 Cleaning up add source state and closing drawer");
           reset();
           toggleUploader(false);
           closeDrawer();
           
           // Open notification panel after successful upload
           setTimeout(() => {
-            console.log("🔔 Opening notification panel for add source");
             openNotificationPanel();
           }, 100);
         },

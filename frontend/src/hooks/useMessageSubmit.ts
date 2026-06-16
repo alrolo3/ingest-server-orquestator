@@ -22,7 +22,6 @@ import { useStreamingStore } from "../store/useStreamingStore";
 import { useImageAttachmentStore } from "../store/useImageAttachmentStore";
 import { useCollections } from "../api/useCollectionsApi";
 import { useHealthStatus } from "../api/useHealthApi";
-import { useUUID } from "./useUUID";
 import type { GenerateRequest } from "../types/requests";
 import type { ChatMessage, Filter, MessageContent, TextContent, ImageContent } from "../types/chat";
 import type { Collection } from "../types/collections";
@@ -150,7 +149,6 @@ export const useMessageSubmit = () => {
   // into the wire format for filter_expr below.
   const { data: health } = useHealthStatus();
   const settings = useSettingsStore();
-  const { generateUUID } = useUUID();
   const { shouldDisableHealthFeatures, isHealthLoading } = useHealthDependentFeatures();
 
   const createRequest = useCallback((currentMessages: ChatMessage[]) => {
@@ -239,14 +237,14 @@ export const useMessageSubmit = () => {
     }
 
     const userMessage: ChatMessage = {
-      id: generateUUID(),
+      id: crypto.randomUUID(),
       role: "user" as const,
       content,
       timestamp: new Date().toISOString(),
     };
 
     const assistantMessage: ChatMessage = {
-      id: generateUUID(),
+      id: crypto.randomUUID(),
       role: "assistant" as const,
       content: "",
       timestamp: new Date().toISOString(),
@@ -261,7 +259,7 @@ export const useMessageSubmit = () => {
 
     const request = createRequest(currentMessages);
     await sendMessage({ request, assistantId: assistantMessage.id });
-  }, [input, attachedImages, messages, addMessage, setInput, clearAllImages, resetStream, createRequest, sendMessage, generateUUID, shouldDisableHealthFeatures, isStreaming]);
+  }, [input, attachedImages, messages, addMessage, setInput, clearAllImages, resetStream, createRequest, sendMessage, shouldDisableHealthFeatures, isStreaming]);
 
   return {
     handleSubmit,
@@ -269,4 +267,4 @@ export const useMessageSubmit = () => {
     isHealthLoading,
     shouldDisableHealthFeatures,
   };
-}; 
+};

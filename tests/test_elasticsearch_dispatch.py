@@ -7,6 +7,7 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestat
 sys.path.insert(0, str(SRC_DIR))
 
 from dispatcher.elastic.elastic import (
+    DENSE_SEMANTIC_INFERENCE_ID,
     ElasticsearchDispatch,
     OPEN_RAG_PIPELINE,
     RECOVERABLE_DOCUMENT_FIELD_MAPPINGS,
@@ -117,11 +118,11 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         self.assertIn('lastIndexOf("/")', normalization_source)
         self.assertIn('lastIndexOf("\\\\")', normalization_source)
 
-    def test_ensure_index_creates_new_mapping_with_splade_sparse_endpoint(self) -> None:
+    def test_ensure_index_creates_new_mapping_with_semantic_endpoints(self) -> None:
         dispatch = ElasticsearchDispatch.model_construct(
             index_name="rag-index",
             pipeline_name="rag-pipeline",
-            inference_id="custom-inference",
+            inference_id=DENSE_SEMANTIC_INFERENCE_ID,
         )
         dispatch._client = FakeClient(index_exists=False)
 
@@ -135,21 +136,37 @@ class ElasticsearchDispatchTest(unittest.TestCase):
             calls[0]["settings"],
         )
         mappings = calls[0]["mappings"]
-        self.assertEqual(build_open_rag_mappings("custom-inference"), mappings)
+        self.assertEqual(build_open_rag_mappings(DENSE_SEMANTIC_INFERENCE_ID), mappings)
         self.assertEqual(
             {"type": "text"},
             mappings["properties"]["content"],
         )
         self.assertEqual(
-            "custom-inference",
+            DENSE_SEMANTIC_INFERENCE_ID,
             mappings["properties"]["content_dense"]["inference_id"],
+        )
+        self.assertEqual(
+            "cosine",
+            mappings["properties"]["content_dense"]["model_settings"]["similarity"],
+        )
+        self.assertEqual(
+            {
+                "element_type": "float",
+                "type": "hnsw",
+                "m": 32,
+                "ef_construction": 200,
+            },
+            mappings["properties"]["content_dense"]["index_options"]["dense_vector"],
         )
         self.assertIn("content_dense", mappings["_source"]["excludes"])
         self.assertIn("content_sparse", mappings["_source"]["excludes"])
-        self.assertIn("content_lex.*", mappings["_source"]["excludes"])
+        self.assertNotIn("content_lex.*", mappings["_source"]["excludes"])
         self.assertNotIn("content", mappings["_source"]["excludes"])
         self.assertNotIn("clean_title", mappings["_source"]["excludes"])
         self.assertNotIn("headings", mappings["_source"]["excludes"])
+        self.assertNotIn("content_lex", mappings["properties"])
+        self.assertNotIn("language", mappings["properties"])
+        self.assertNotIn("language_probability", mappings["properties"])
         for field_name in ("content_sparse", "clean_title", "headings"):
             self.assertEqual(
                 "naver-splade-v3",
@@ -208,6 +225,9 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         self.assertIn("title_sparse", remove_fields)
         self.assertIn("raw_text", remove_fields)
         self.assertIn("raw_data", remove_fields)
+        self.assertNotIn("language_detection", remove_fields)
+        self.assertNotIn("content_lex", "".join(script_sources))
+        self.assertFalse(any("inference" in processor for processor in OPEN_RAG_PIPELINE["processors"]))
 
     def test_dispatch_chunks_retries_only_transient_failed_bulk_items(self) -> None:
         dispatch, client = _dispatch_with_bulk_client(

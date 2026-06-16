@@ -21,8 +21,8 @@ from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
 from metrics.store import JobMetricsStore
 from model.document_chunk import DocumentChunk
-from processing.chunker_factory import ChunkerFactory
-from processing.parseer_factory import ParserFactory
+from processing.chunking.docling_chunker import DoclingChunker
+from processing.parsers.docling_parser import DoclingParser
 from queues.domain.job import Job
 
 
@@ -131,10 +131,9 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
             job.input_data,
         )
 
-        parser = ParserFactory.create(
-            parser_type=job.parser_type,
-            server_config=settings,
-        )
+        if job.parser_type != "docling":
+            raise ValueError(f"Unsupported parser type: {job.parser_type}")
+        parser = DoclingParser(type=job.parser_type, server_config=settings)
 
         current_stage = JobStage.PARSING
         progress.mark_stage(current_stage, "Parsing document.")
@@ -146,9 +145,8 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         current_stage = JobStage.CHUNKING
         progress.mark_stage(current_stage, "Creating chunks.")
         LOGGER.info("Chunking job job_id=%s", job.job_id)
-        chunker = ChunkerFactory.create(
-            chunker_backend=job.parser_type,
-            chunker_type=job.chunker_type,
+        chunker = DoclingChunker(
+            type_=job.chunker_type,
             server_config=settings,
             tokenizer_path=settings.tokenizer_path,
         )

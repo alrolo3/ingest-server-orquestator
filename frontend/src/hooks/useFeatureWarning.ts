@@ -38,8 +38,6 @@ export const useFeatureWarning = () => {
   const { set: setSettings } = useSettingsStore();
 
   const showWarning = useCallback((key: string, value: boolean) => {
-    console.log('🔥 FEATURE WARNING TRIGGERED:', key);
-    
     // If enabling and user hasn't disabled warnings, show modal
     if (value && !dontShowAgain) {
       setPendingChange({ key, value });

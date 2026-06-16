@@ -11,7 +11,7 @@ from docling_core.transforms.chunker.hierarchical_chunker import (
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from docling_core.transforms.serializer.markdown import MarkdownTableSerializer
 from docling_core.types import DoclingDocument
-from pydantic import PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 from transformers import AutoTokenizer
 
 from config.config import ServerConfig
@@ -19,7 +19,6 @@ from metrics.progress import ProgressReporter
 from model.document_chunk import DocumentChunk
 from model.parsed_document import ParsedDocument
 from model.title_normalization import normalize_document_title
-from processing.base_chunker import AbstractChunker
 
 
 _DECIMAL_NUMBER_RE = re.compile(r"\d+(?:\.\d{3})*,\d+")
@@ -165,8 +164,13 @@ class MarkdownChunkingSerializerProvider(ChunkingSerializerProvider):
         )
 
 
-class DoclingChunker(AbstractChunker):
+class DoclingChunker(BaseModel):
     """Chunker implementation backed by Docling."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    type: str
+    server_config: ServerConfig
 
     _chunker: HybridChunker = PrivateAttr()
     _max_tokens: int = PrivateAttr(default=SPARSE_CHUNK_MAX_TOKENS)

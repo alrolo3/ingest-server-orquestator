@@ -19,12 +19,7 @@ import { useCollectionDrawerStore } from "../../store/useCollectionDrawerStore";
 import { useCollectionActions } from "../../hooks/useCollectionActions";
 import NvidiaUpload from "../files/NvidiaUpload";
 import { Button, Stack, Flex, Text, Spinner } from "@kui/react";
-
-const CloseIcon = () => (
-  <svg style={{ width: '16px', height: '16px', color: 'var(--text-color-inverse)' }} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
+import { X } from "lucide-react";
 
 export const UploaderSection = () => {
   const { selectedFiles, hasInvalidFiles } = useNewCollectionStore();
@@ -41,7 +36,6 @@ export const UploaderSection = () => {
   }, []);
 
   const handleFilesChange = useCallback((files: File[]) => {
-    console.log('🟠 UploaderSection: received', files.length, 'files, calling setFiles');
     useNewCollectionStore.getState().setFiles(files);
   }, []);
 
@@ -67,7 +61,7 @@ export const UploaderSection = () => {
           size="small"
           data-testid="uploader-close-button"
         >
-          <CloseIcon />
+          <X size={16} style={{ color: 'var(--text-color-inverse)' }} />
         </Button>
       </Flex>
       

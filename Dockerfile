@@ -21,7 +21,7 @@ RUN apt-get update && \
       libxrender1 && \
     rm -rf /var/lib/apt/lists/*
 
-COPY ingest-server-orquestator/requirements.txt ./requirements.txt
+COPY ingest-server-orquestator/requirements.txt ingest-server-orquestator/constraints.txt ./
 RUN python -m pip install --upgrade pip && \
     python -m pip install -r requirements.txt && \
     python -m pip install --no-deps surya-ocr==0.20.0

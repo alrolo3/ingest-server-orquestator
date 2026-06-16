@@ -5,11 +5,14 @@ import { render, screen, fireEvent } from '../../../test/utils';
 import { EndpointsSection } from '../EndpointsSection';
 
 const mockUseSettingsStore = vi.fn();
-const mockUseServerDefaultsStore = vi.fn();
+const mockUseServerConfiguration = vi.fn();
 
 vi.mock('../../../store/useSettingsStore', () => ({
-  useSettingsStore: () => mockUseSettingsStore(),
-  useServerDefaultsStore: () => mockUseServerDefaultsStore()
+  useSettingsStore: () => mockUseSettingsStore()
+}));
+
+vi.mock('../../../api/useConfigurationApi', () => ({
+  useServerConfiguration: () => mockUseServerConfiguration()
 }));
 
 describe('EndpointsSection', () => {
@@ -25,11 +28,7 @@ describe('EndpointsSection', () => {
       vdbEndpoint: '',
       set: mockSetSettings
     });
-    mockUseServerDefaultsStore.mockReturnValue({
-      config: null,
-      isLoading: false,
-      error: null
-    });
+    mockUseServerConfiguration.mockReturnValue({ data: null });
   });
 
   describe('Rendering', () => {

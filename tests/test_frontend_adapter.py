@@ -132,7 +132,7 @@ class FrontendAdapterTest(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             with (
                 patch("api.frontend_adapter.UPLOAD_DIR", Path(temp_dir)),
-                patch("api.frontend_adapter.put_item") as put_item,
+                patch("api.frontend_adapter.local_queue.put") as put_item,
             ):
                 upload_response = asyncio.run(
                     frontend_upload_documents(

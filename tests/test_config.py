@@ -9,7 +9,11 @@ sys.path.insert(0, str(SRC_DIR))
 
 from config import config as config_module
 from config.gpu import configure_gpu_environment
-from dispatcher.elastic.elastic import OPEN_RAG_PIPELINE, build_open_rag_mappings
+from dispatcher.elastic.elastic import (
+    DENSE_SEMANTIC_INFERENCE_ID,
+    OPEN_RAG_PIPELINE,
+    build_open_rag_mappings,
+)
 
 
 class ServerConfigTest(unittest.TestCase):
@@ -82,7 +86,7 @@ class ServerConfigTest(unittest.TestCase):
             "open_rag_embeddings_v4_multilingual_semantic_pipeline",
             settings.elastic_pipeline_name,
         )
-        self.assertEqual("qwen3-embedding-4b", settings.elastic_inference_id)
+        self.assertEqual(DENSE_SEMANTIC_INFERENCE_ID, settings.elastic_inference_id)
         self.assertFalse(settings.elastic_verify_certs)
         self.assertFalse(settings.elastic_ssl_show_warn)
         self.assertTrue(settings.elastic_http_compress)
@@ -309,15 +313,31 @@ class ServerConfigTest(unittest.TestCase):
             mappings["properties"]["content_dense"]["inference_id"],
         )
         self.assertEqual(
+            "cosine",
+            mappings["properties"]["content_dense"]["model_settings"]["similarity"],
+        )
+        self.assertEqual(
+            {
+                "element_type": "float",
+                "type": "hnsw",
+                "m": 32,
+                "ef_construction": 200,
+            },
+            mappings["properties"]["content_dense"]["index_options"]["dense_vector"],
+        )
+        self.assertEqual(
             {"type": "text"},
             mappings["properties"]["content"],
         )
         self.assertIn("content_dense", mappings["_source"]["excludes"])
         self.assertIn("content_sparse", mappings["_source"]["excludes"])
-        self.assertIn("content_lex.*", mappings["_source"]["excludes"])
+        self.assertNotIn("content_lex.*", mappings["_source"]["excludes"])
         self.assertNotIn("content", mappings["_source"]["excludes"])
         self.assertNotIn("clean_title", mappings["_source"]["excludes"])
         self.assertNotIn("headings", mappings["_source"]["excludes"])
+        self.assertNotIn("content_lex", mappings["properties"])
+        self.assertNotIn("language", mappings["properties"])
+        self.assertNotIn("language_probability", mappings["properties"])
         self.assertEqual(
             {
                 "inference_id": "naver-splade-v3",
@@ -351,6 +371,8 @@ class ServerConfigTest(unittest.TestCase):
         self.assertIn("title_sparse", remove_fields)
         self.assertIn("raw_text", remove_fields)
         self.assertIn("raw_data", remove_fields)
+        self.assertNotIn("language_detection", remove_fields)
+        self.assertNotIn("content_lex", str(OPEN_RAG_PIPELINE))
 
     def test_docling_table_mode_validates_supported_values(self) -> None:
         with patch.dict(os.environ, {"DOCLING_TABLE_MODE": "precise"}, clear=True):

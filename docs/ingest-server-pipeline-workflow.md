@@ -14,9 +14,9 @@ This document describes the full runtime path from a user uploading a file in th
 6. Docling picture description calls go through LiteLLM at `inference-service:4000` and then to vLLM.
 7. The parsed Docling document is chunked with a HuggingFace tokenizer from `/tokenizer`; chunks include page, source, title, token count, and Docling item metadata.
 8. The dispatcher bulk indexes the chunks into Elasticsearch index `open-rag-embeddings-v4` through pipeline `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
-9. The Elasticsearch pipeline normalizes metadata, detects language, routes lexical text into language-specific BM25 fields, and indexes dense and sparse semantic fields through Elastic inference endpoints.
+9. The Elasticsearch pipeline normalizes metadata and indexes dense and sparse semantic fields through Elastic inference endpoints.
 10. A user opens `https://kibana.simona.local`, asks a question in agentic chat, and the enabled RAG workflow `rag-query-retrieval-tool-v4-conversation-aware` searches the indexed chunks.
-11. The workflow rewrites the question, runs multilingual RRF retrieval, expands same-page and neighboring-page context, and returns grounding documents to the agent.
+11. The workflow rewrites the question, runs semantic RRF retrieval, expands same-page and neighboring-page context, and returns grounding documents to the agent.
 12. The agent answers only from returned documents and includes references with file, page, and chunk metadata.
 
 ## Ingestion Diagram
@@ -191,8 +191,7 @@ The chunker:
   still fits within the configured sparse-token budget. This reduces isolated
   heading or label chunks while preserving the `512` token hard cap.
 - Keeps contextualized chunk text in `content` and lets the ingest pipeline copy it
-  into generated `content_dense`, `content_sparse`, and `content_lex.<lang>`
-  search fields.
+  into generated `content_dense` and `content_sparse` search fields.
 - Extracts Docling item references and page numbers from chunk provenance.
 
 Each indexed `DocumentChunk` includes:
@@ -227,7 +226,7 @@ The dispatcher connects to:
 | `ELASTIC_HOSTS` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
 | Index | `open-rag-embeddings-v4` |
 | Pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
-| Inference ID | `openai-text_embedding-qwen3-embedding-4b` |
+| Inference ID | `openai-text_embedding-octen-embedding-4b` |
 | Bulk batch size | `20` |
 | Bulk timeout | `30m` |
 | Bulk request timeout | `1800s` |
@@ -261,14 +260,12 @@ flowchart TD
     ts[Set ingested_at]
     escape[Escape dollar-brace placeholders<br/>in content, content_dense,<br/>content_sparse, clean_title, and headings]
     normalize[Normalize helper fields<br/>record_type, clean_title, headings,<br/>content_dense, content_sparse,<br/>searchable, boilerplate,<br/>content_kind, content_length]
-    lang[ML inference<br/>lang_ident_model_1]
-    route[Route content to one lexical field<br/>content_lex.en/es/fr<br/>default en when unsupported or low confidence]
     remove[Remove temporary fields]
     semantic[semantic_text fields<br/>dense content_dense plus sparse content/title/headings]
-    endpoint[Elastic inference endpoints<br/>dense Qwen3 embedding and sparse multilingual]
+    endpoint[Elastic inference endpoints<br/>dense Octen embedding and sparse multilingual]
     indexed[Indexed RAG chunk]
 
-    chunk --> ts --> escape --> normalize --> lang --> route --> remove --> semantic --> indexed
+    chunk --> ts --> escape --> normalize --> remove --> semantic --> indexed
     semantic --> endpoint --> semantic
 ```
 
@@ -279,12 +276,10 @@ Pipeline processors:
 | 1 | `set` | Adds `ingested_at` from `_ingest.timestamp` if absent |
 | 2 | `script` | Escapes `${` in `content`, `content_dense`, `content_sparse`, `clean_title`, and `headings` to avoid custom inference template conflicts |
 | 3 | `script` | Sets `record_type=chunk`, sanitizes filename-style titles into `clean_title`, normalizes `headings`, populates `content_dense` and `content_sparse`, sets `content_length`, `searchable=true`, `boilerplate=false`, `content_kind=chunk` |
-| 4 | `inference` | Runs `lang_ident_model_1` on `content` |
-| 5 | `script` | Chooses `es`, `en`, or `fr`; defaults to `en` if unsupported or confidence is below `0.60`; copies content into `content_lex.<lang>` |
-| 6 | `remove` | Removes temporary or legacy fields |
+| 4 | `remove` | Removes temporary or legacy fields |
 | failure | `set` | Writes failures to `ingest_error` |
 
-The index mapping stores returned chunk text in `content` as indexed plain text. It stores `content_dense` as dense `semantic_text` with inference endpoint `openai-text_embedding-qwen3-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `naver-splade-v3`. Large generated fields (`content_dense`, `content_sparse`, and `content_lex.*`) are excluded from `_source` while remaining searchable. Titles and headings remain in `_source`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
+The index mapping stores returned chunk text in `content` as indexed plain text. It stores `content_dense` as dense `semantic_text` with inference endpoint `openai-text_embedding-octen-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `naver-splade-v3`. Large generated fields (`content_dense` and `content_sparse`) are excluded from `_source` while remaining searchable. Titles and headings remain in `_source`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
 
 ## Kibana Agentic Chat Retrieval
 
@@ -312,12 +307,8 @@ flowchart TD
     agent[Agent instruction<br/>Grounded RAG Q&A]
     tool[rag_query_tool]
     rewrite[AI prompt step<br/>conversation-aware rewrite]
-    variants[Outputs<br/>standalone_question<br/>query_en<br/>query_es<br/>answer_language]
-    rrf[RRF multilingual retrieval<br/>rank_window_size 100<br/>rank_constant 20]
-    lexical1[Lexical branch<br/>standalone question]
-    lexical2[Lexical branch<br/>original question]
-    lexicalEN[English lexical branch]
-    lexicalES[Spanish lexical branch]
+    variants[Outputs<br/>standalone_question<br/>answer_language]
+    rrf[RRF semantic retrieval<br/>rank_window_size 100<br/>rank_constant 20]
     semantic[Semantic branches<br/>dense content_dense plus sparse content/title/headings]
     es[Elasticsearch<br/>open-rag-embeddings-v4]
     expand[Same-page and neighboring-page expansion<br/>page_number/page_numbers]
@@ -325,10 +316,6 @@ flowchart TD
     answer[Agent answer with references]
 
     user --> agent --> tool --> rewrite --> variants --> rrf
-    rrf --> lexical1 --> es
-    rrf --> lexical2 --> es
-    rrf --> lexicalEN --> es
-    rrf --> lexicalES --> es
     rrf --> semantic --> es
     es --> expand --> docs --> agent --> answer
 ```
@@ -350,8 +337,6 @@ The `ai.prompt` step rewrites follow-up questions into standalone retrieval quer
 | --- | --- |
 | `question_original` | Exact current user question |
 | `standalone_question` | Self-contained retrieval question |
-| `query_en` | English retrieval variant |
-| `query_es` | Spanish retrieval variant |
 | `answer_language` | `en` or `es` |
 
 ### 2. First-Stage RRF Retrieval
@@ -370,16 +355,10 @@ Retrieval branches:
 
 | Branch | Query text | Fields |
 | --- | --- | --- |
-| Standalone lexical | `standalone_question` | `content_lex.en`, `content_lex.es`, `content_lex.fr`, other language fallbacks, `title`, `source_file_name.text` |
-| Original lexical | `question_original` | Same multilingual lexical/title fields |
-| English lexical | `query_en` | `content_lex.en`, title/source fields |
-| Spanish lexical | `query_es` | `content_lex.es`, title/source fields |
 | Dense content semantic | `standalone_question` | `content_dense` semantic_text |
 | Sparse content semantic | `standalone_question` | `content_sparse` sparse semantic_text |
-| Sparse title semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `clean_title` sparse semantic_text |
-| Sparse heading semantic | `standalone_question`, `question_original`, `query_en`, `query_es` | `headings` sparse semantic_text |
-
-The current index mapping defines `content_lex.en`, `content_lex.es`, and `content_lex.fr`. The workflow also lists optional lexical fields such as `content_lex.default` and additional language fields; those clauses are harmless unless future mappings add those fields.
+| Sparse title semantic | `standalone_question` | `clean_title` sparse semantic_text |
+| Sparse heading semantic | `standalone_question` | `headings` sparse semantic_text |
 
 The workflow maps first-stage hits into `initial_rrf_documents`.
 
@@ -405,7 +384,7 @@ The workflow returns:
 | --- | --- |
 | `documents` | Expanded grounding chunks used for the answer |
 | `initial_rrf_documents` | First-stage RRF hits, useful for diagnostics |
-| `standalone_question`, `query_en`, `query_es` | Retrieval trace fields |
+| `standalone_question` | Retrieval trace field |
 | `answer_language` | Language for the final answer |
 | `instruction` | Grounding contract for the agent |
 

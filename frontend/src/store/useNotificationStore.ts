@@ -42,16 +42,12 @@ interface NotificationState {
   
   // General notification management
   markAsRead: (id: string) => void;
-  dismissNotification: (id: string) => void;
   removeNotification: (id: string) => void;
-  clearNotifications: () => void;
   clearAllNotifications: () => void;
   cleanupDuplicates: () => void;
   
   // Getters for existing notification system compatibility
   getPendingTasks: () => (IngestionTask & { read?: boolean })[];
-  getCompletedTasks: () => (IngestionTask & { completedAt?: number; read?: boolean })[];
-  getHealthNotifications: () => HealthNotification[];
   getAllNotifications: () => AppNotification[];
   getUnreadCount: () => number;
 }
@@ -345,14 +341,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     return { notifications };
   }),
 
-  dismissNotification: (id) => set((state) => ({
-    notifications: state.notifications.map(notification =>
-      notification.id === id 
-        ? { ...notification, dismissed: true, read: true }
-        : notification
-    )
-  })),
-
   removeNotification: (id) => set((state) => {
     const notification = state.notifications.find(n => n.id === id);
     
@@ -375,8 +363,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     
     return { notifications: state.notifications.filter(n => n.id !== id) };
   }),
-
-  clearNotifications: () => set({ notifications: [] }),
 
   // Clear all notifications and their localStorage entries
   clearAllNotifications: () => {
@@ -437,29 +423,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     return get().notifications
       .filter((n): n is TaskNotification => n.type === "task" && n.task.state === "PENDING")
       .map(n => notificationToTask(n));
-  },
-
-  getCompletedTasks: () => {
-    return get().notifications
-      .filter((n): n is TaskNotification => n.type === "task" && n.task.state !== "PENDING")
-      .map(n => notificationToTask(n));
-  },
-
-  getHealthNotifications: () => {
-    return get().notifications
-      .filter((n): n is HealthNotification => n.type === "health" && !n.dismissed)
-      .sort((a, b) => {
-        // Sort by severity (error > warning > info), then by newest first
-        const severityOrder = { error: 3, warning: 2, info: 1, success: 0 };
-        const severityDiff = severityOrder[b.severity] - severityOrder[a.severity];
-        if (severityDiff !== 0) return severityDiff;
-        
-        // Then by unread status
-        if (a.read !== b.read) return a.read ? 1 : -1;
-        
-        // Finally by creation time (newest first)
-        return b.createdAt - a.createdAt;
-      });
   },
 
   getAllNotifications: () => {

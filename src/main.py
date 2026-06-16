@@ -36,7 +36,7 @@ from config.config import load_server_config
 from config.paths import OUTPUT_DIR, UPLOAD_DIR
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
-from queues.queue_local import put_item
+from queues.queue_local import local_queue
 from workers.inbound_worker import InboundWorker
 
 
@@ -194,11 +194,6 @@ async def root():
     return {"message": "Hello World"}
 
 
-@app.get("/hello/{name}")
-async def say_hello(name: str):
-    return {"message": f"Hello {name}"}
-
-
 @app.post("/api/v1/ingest/file")
 async def ingest_file(
     request: Request,
@@ -232,7 +227,7 @@ async def ingest_file(
     # queue_message = job.to_queue_message()
 
     request.app.state.metrics_store.create_for_job(job)
-    put_item(job)
+    local_queue.put(job)
     LOGGER.info(
         "Queued ingest job job_id=%s queue=%s file_path=%s",
         job.job_id,

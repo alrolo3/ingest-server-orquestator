@@ -30,9 +30,9 @@ skills:
       - documents is the primary grounding evidence for the final answer.
       - initial_rrf_documents is diagnostic only; do not answer from it when documents contains usable evidence.
       - answer_language is the final answer language unless the user explicitly asks for another language.
-      - standalone_question, query_en, and query_es are retrieval trace fields for troubleshooting, not answer evidence.
+      - standalone_question is a retrieval trace field for troubleshooting, not answer evidence.
 
-      Grounding text is in each document's content field. Do not cite or answer from generated search fields such as content_dense, content_sparse, or content_lex.*.
+      Grounding text is in each document's content field. Do not cite or answer from generated search fields such as content_dense or content_sparse.
 
       Before calling the tool, privately identify locked critical keywords. These include exact filenames, document IDs, source IDs, chunk IDs, URLs, commands, exact identifiers, proper nouns, organizations, project names, product names, model names, people, acronyms, domain terms, legal references, rule numbers, article numbers, table labels, section names, page hints, zone labels, dates, numbers, quoted phrases, unusual spellings, and original Spanish or English terms that may appear verbatim in the index.
 

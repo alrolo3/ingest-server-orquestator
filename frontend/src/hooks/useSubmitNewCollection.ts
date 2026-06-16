@@ -44,8 +44,6 @@ export function useSubmitNewCollection() {
   const createCollection = useCreateCollection();
 
   const submit = async () => {
-    console.log("🚀 Starting collection submission:", { collectionName, fileCount: selectedFiles.length });
-    
     const filteredSchema = metadataSchema.map((field) => {
       const schemaField: APIMetadataField = { 
         name: field.name, 
@@ -93,11 +91,9 @@ export function useSubmitNewCollection() {
     setError(null);
     
     try {
-      console.log("📝 Creating collection...");
       await new Promise((resolve, reject) => {
         createCollection.mutate(collectionPayload, {
           onSuccess: (data) => {
-            console.log("✅ Collection created successfully:", data);
             resolve(data);
           },
           onError: (error) => {
@@ -107,10 +103,8 @@ export function useSubmitNewCollection() {
         });
       });
 
-      console.log("🔄 Invalidating collections cache...");
       await queryClient.invalidateQueries({ queryKey: ["collections"] });
       await queryClient.refetchQueries({ queryKey: ["collections"] });
-      console.log("✅ Collections cache refreshed");
 
       if (selectedFiles.length > 0) {
         const formData = new FormData();
@@ -210,7 +204,6 @@ export function useSubmitNewCollection() {
         if (!res.ok) throw new Error("Failed to upload documents");
 
         const data = await res.json();
-        console.log("📤 Upload response:", data);
 
         if (data?.task_id) {
           const taskData = {
@@ -221,20 +214,16 @@ export function useSubmitNewCollection() {
             created_at: new Date().toISOString(),
           };
           
-          console.log("📋 Adding pending task:", taskData);
           addTaskNotification(taskData);
           
           setTimeout(() => {
-            console.log("🔔 Opening notification panel");
             openNotificationPanel();
           }, 100);
         }
       }
 
-      console.log("🎉 Collection submission completed successfully");
       setUploadComplete(true);
       
-      console.log("🔄 Resetting collection store state");
       reset(); 
       
       navigate("/");

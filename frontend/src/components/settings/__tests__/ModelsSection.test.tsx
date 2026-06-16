@@ -5,11 +5,14 @@ import { render, screen, fireEvent } from '../../../test/utils';
 import { ModelsSection } from '../ModelsSection';
 
 const mockUseSettingsStore = vi.fn();
-const mockUseServerDefaultsStore = vi.fn();
+const mockUseServerConfiguration = vi.fn();
 
 vi.mock('../../../store/useSettingsStore', () => ({
-  useSettingsStore: () => mockUseSettingsStore(),
-  useServerDefaultsStore: () => mockUseServerDefaultsStore()
+  useSettingsStore: () => mockUseSettingsStore()
+}));
+
+vi.mock('../../../api/useConfigurationApi', () => ({
+  useServerConfiguration: () => mockUseServerConfiguration()
 }));
 
 describe('ModelsSection', () => {
@@ -24,11 +27,7 @@ describe('ModelsSection', () => {
       vlmModel: '',
       set: mockSetSettings
     });
-    mockUseServerDefaultsStore.mockReturnValue({
-      config: null,
-      isLoading: false,
-      error: null
-    });
+    mockUseServerConfiguration.mockReturnValue({ data: null });
   });
 
   describe('Rendering', () => {

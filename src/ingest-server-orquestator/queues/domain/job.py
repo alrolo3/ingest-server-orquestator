@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -45,25 +44,3 @@ class Job:
             "created_at": self.created_at,
             "chunker_type": self.chunker_type
         }
-
-    def to_record(self) -> dict[str, str]:
-        return {
-            "job_id": self.job_id,
-            "parser_type": self.parser_type,
-            "input_data_json": json.dumps(self.input_data),
-            "settings_json": json.dumps(self.settings),
-            "status": self.status,
-            "created_at": self.created_at,
-            "chunker_type": self.chunker_type
-        }
-
-    @classmethod
-    def from_record(cls, record: dict[str, Any]) -> "Job":
-        return cls(
-            job_id=str(record["job_id"]),
-            parser_type=str(record["parser_type"]),
-            input_data=json.loads(str(record["input_data_json"])),
-            settings=json.loads(str(record["settings_json"])),
-            status=str(record["status"]),
-            created_at=str(record["created_at"]),
-        )

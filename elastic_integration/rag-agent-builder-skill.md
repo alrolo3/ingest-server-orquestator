@@ -34,9 +34,9 @@ Use returned fields this way:
 - `documents`: primary grounding evidence for the final answer.
 - `initial_rrf_documents`: diagnostic only; do not answer from it when `documents` contains usable evidence.
 - `answer_language`: final answer language unless the user explicitly asks for another language.
-- `standalone_question`, `query_en`, and `query_es`: retrieval trace fields for troubleshooting, not answer evidence.
+- `standalone_question`: retrieval trace field for troubleshooting, not answer evidence.
 
-Grounding text is in each document's `content` field. Do not cite or answer from generated search fields such as `content_dense`, `content_sparse`, or `content_lex.*`.
+Grounding text is in each document's `content` field. Do not cite or answer from generated search fields such as `content_dense` or `content_sparse`.
 
 ## Private Retrieval Thinking Process
 

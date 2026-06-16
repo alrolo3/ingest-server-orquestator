@@ -31,7 +31,6 @@ The tool returns:
 - `documents`: expanded grounding passages. This is the primary evidence set.
 - `initial_rrf_documents`: first-stage RRF hits before page-neighbor expansion. Use only for diagnostics.
 - `standalone_question`: rewritten standalone retrieval question.
-- `query_en` and `query_es`: retrieval variants.
 - `answer_language`: language to use for the final answer.
 - `instruction`: grounding instructions returned by the workflow.
 
@@ -42,7 +41,7 @@ Relevant document fields may include:
 - `headings`
 - `page_start`, `page_end`, `page_number`, and `page_numbers`
 - `chunk_id`, `record_id`, `document_id`, and `elastic_id`
-- `language`, `content_kind`, and `chunk_quality`
+- `content_kind` and `chunk_quality`
 
 ## Required Process
 

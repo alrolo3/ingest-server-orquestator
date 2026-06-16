@@ -205,14 +205,8 @@ class JobRunnerTest(unittest.TestCase):
                 patch("workers.job_runner.OUTPUT_DIR", output_root),
                 patch("workers.job_runner.configure_torch_cuda_device"),
                 patch("workers.job_runner.torch.set_float32_matmul_precision"),
-                patch(
-                    "workers.job_runner.ParserFactory.create",
-                    return_value=FakeParser(),
-                ),
-                patch(
-                    "workers.job_runner.ChunkerFactory.create",
-                    return_value=FakeChunker(),
-                ),
+                patch("workers.job_runner.DoclingParser", return_value=FakeParser()),
+                patch("workers.job_runner.DoclingChunker", return_value=FakeChunker()),
                 patch("workers.job_runner.ElasticsearchDispatch", FailingDispatch),
                 patch("workers.job_runner.LOGGER.info"),
                 patch("workers.job_runner.LOGGER.exception"),

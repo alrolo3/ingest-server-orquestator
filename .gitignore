@@ -6,5 +6,13 @@ __pycache__/
 hf_token
 src/Hands_On_Red_Team_Tactics___A_practical.pdf
 .agents/
+.idea/
+*.sarif.json
+qodana-*.zip
 /ingest-server-orquestator_latest.tar
 /ingest-server-orquestator_latest.tar.gz
+/ingest-server-orquestator_latest.tar.gz.sha256
+src/*.pdf
+src/screenshot.png
+frontend/public/vite.svg
+frontend/src/assets/react.svg

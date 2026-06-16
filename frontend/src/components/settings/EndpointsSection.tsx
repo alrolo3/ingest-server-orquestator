@@ -14,7 +14,8 @@
 // limitations under the License.
 
 import { Stack, FormField, TextInput } from "@kui/react";
-import { useSettingsStore, useServerDefaultsStore } from "../../store/useSettingsStore";
+import { useSettingsStore } from "../../store/useSettingsStore";
+import { useServerConfiguration } from "../../api/useConfigurationApi";
 
 /**
  * Endpoints section component for configuring API endpoint URLs.
@@ -36,7 +37,7 @@ export const EndpointsSection = () => {
   } = useSettingsStore();
 
   // Get server defaults for accurate display
-  const { config: serverDefaults } = useServerDefaultsStore();
+  const { data: serverDefaults } = useServerConfiguration();
   const defaults = serverDefaults?.endpoints;
 
   const endpoints = [

@@ -5,11 +5,14 @@ import { render, screen, fireEvent } from '../../../test/utils';
 import { FeatureTogglesSection } from '../FeatureTogglesSection';
 
 const mockUseSettingsStore = vi.fn();
-const mockUseServerDefaultsStore = vi.fn();
+const mockUseServerConfiguration = vi.fn();
 
 vi.mock('../../../store/useSettingsStore', () => ({
-  useSettingsStore: () => mockUseSettingsStore(),
-  useServerDefaultsStore: () => mockUseServerDefaultsStore()
+  useSettingsStore: () => mockUseSettingsStore()
+}));
+
+vi.mock('../../../api/useConfigurationApi', () => ({
+  useServerConfiguration: () => mockUseServerConfiguration()
 }));
 
 describe('FeatureTogglesSection', () => {
@@ -25,11 +28,7 @@ describe('FeatureTogglesSection', () => {
       enableVlmInference: false,
       enableFilterGenerator: false
     });
-    mockUseServerDefaultsStore.mockReturnValue({
-      config: null,
-      isLoading: false,
-      error: null
-    });
+    mockUseServerConfiguration.mockReturnValue({ data: null });
   });
 
   describe('Rendering', () => {

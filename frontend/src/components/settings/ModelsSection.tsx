@@ -14,7 +14,8 @@
 // limitations under the License.
 
 import { Stack, FormField, TextInput } from "@kui/react";
-import { useSettingsStore, useServerDefaultsStore } from "../../store/useSettingsStore";
+import { useSettingsStore } from "../../store/useSettingsStore";
+import { useServerConfiguration } from "../../api/useConfigurationApi";
 
 /**
  * Models section component for configuring AI model settings.
@@ -28,7 +29,7 @@ export const ModelsSection = () => {
   const { model, embeddingModel, rerankerModel, vlmModel, set: setSettings } = useSettingsStore();
   
   // Get server defaults for accurate display
-  const { config: serverDefaults } = useServerDefaultsStore();
+  const { data: serverDefaults } = useServerConfiguration();
   const defaults = serverDefaults?.models;
 
   const models = [

@@ -14,7 +14,8 @@
 // limitations under the License.
 
 import { Stack, Switch, Text } from "@kui/react";
-import { useSettingsStore, useServerDefaultsStore } from "../../store/useSettingsStore";
+import { useSettingsStore } from "../../store/useSettingsStore";
+import { useServerConfiguration } from "../../api/useConfigurationApi";
 
 /**
  * Props for the FeatureToggle component.
@@ -67,7 +68,7 @@ export const FeatureTogglesSection = ({ onShowWarning }: FeatureTogglesSectionPr
   } = useSettingsStore();
 
   // Get server defaults for accurate fallback values
-  const { config: serverDefaults } = useServerDefaultsStore();
+  const { data: serverDefaults } = useServerConfiguration();
   const defaults = serverDefaults?.feature_toggles;
 
   const features = [

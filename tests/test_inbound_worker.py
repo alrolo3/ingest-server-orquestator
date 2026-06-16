@@ -11,7 +11,7 @@ sys.path.insert(0, str(SRC_DIR))
 from config.config import ServerConfig
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
-from queues.queue_local import LocalQueue
+from queues.queue_local import local_queue
 from workers.inbound_worker import InboundWorker
 
 
@@ -84,14 +84,14 @@ class InboundWorkerTest(unittest.TestCase):
 
         self.assertTrue(fake_executor.submitted.wait(timeout=1.0))
         self.assertEqual([first_job], fake_executor.submitted_jobs)
-        self.assertEqual(1, worker.queue.queue.qsize())
+        self.assertEqual(1, worker.queue.qsize())
 
         fake_executor.submitted.clear()
         fake_executor.futures[0].complete()
 
         self.assertTrue(fake_executor.submitted.wait(timeout=1.0))
         self.assertEqual([first_job, second_job], fake_executor.submitted_jobs)
-        self.assertEqual(0, worker.queue.queue.qsize())
+        self.assertEqual(0, worker.queue.qsize())
 
         fake_executor.futures[1].complete()
         stop_event.set()
@@ -119,11 +119,10 @@ class InboundWorkerTest(unittest.TestCase):
         )
 
     def _drain_local_queue(self) -> None:
-        queue = LocalQueue().queue
         while True:
             try:
-                queue.get(block=False)
-                queue.task_done()
+                local_queue.get(block=False)
+                local_queue.task_done()
             except Empty:
                 break
 

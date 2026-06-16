@@ -6,19 +6,19 @@ This project uses **Vitest** with **React Testing Library** for comprehensive te
 
 ```bash
 # Run all tests
-pnpm test
+npm test
 
 # Run tests in watch mode
-pnpm test:watch
+npm run test:watch
 
 # Run tests once (CI mode)
-pnpm test:run
+npm run test:run
 
 # Run tests with coverage
-pnpm test:coverage
+npm run test:coverage
 
 # Open Vitest UI
-pnpm test:ui
+npm run test:ui
 ```
 
 ## 📁 Project Structure
@@ -286,7 +286,7 @@ afterAll(() => {
 
 Tests are configured to run in CI with:
 ```bash
-pnpm test:run --coverage
+npm run test:run -- --coverage
 ```
 
 Coverage reports are generated in multiple formats:
@@ -299,4 +299,4 @@ Coverage reports are generated in multiple formats:
 - [Vitest Documentation](https://vitest.dev/)
 - [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/)
 - [Testing Library Queries](https://testing-library.com/docs/queries/about/)
-- [Common Testing Patterns](https://kentcdodds.com/blog/common-mistakes-with-react-testing-library) 
+- [Common Testing Patterns](https://kentcdodds.com/blog/common-mistakes-with-react-testing-library)
