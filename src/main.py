@@ -22,6 +22,7 @@ from config.gpu import configure_gpu_environment
 configure_gpu_environment()
 
 from fastapi import FastAPI
+from fastapi import Body
 from fastapi import File
 from fastapi import Form
 from fastapi import HTTPException
@@ -34,6 +35,7 @@ from fastapi.responses import FileResponse
 from api.frontend_adapter import router as frontend_adapter_router
 from config.config import load_server_config
 from config.paths import OUTPUT_DIR, UPLOAD_DIR
+from dispatcher.elastic.elastic import ElasticsearchDispatch
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
 from queues.queue_local import local_queue
@@ -48,6 +50,7 @@ logging.basicConfig(
 LOGGER = logging.getLogger("ingest-server-orquestator.api")
 
 _PRIVATE_JOB_FIELDS = {"output_path"}
+_CASE_ELASTIC_INDEX_NAME = "case-rag"
 
 
 def _build_metrics_store() -> tuple[object | None, JobMetricsStore]:
@@ -90,6 +93,22 @@ def _save_upload(file: UploadFile, filename: str) -> tuple[Path, int]:
     with target_path.open("wb") as output_file:
         shutil.copyfileobj(file.file, output_file)
 
+    return target_path, target_path.stat().st_size
+
+
+def _case_filename(payload: dict[str, Any]) -> str:
+    filename = _safe_filename(
+        str(payload.get("title") or payload.get("case_id") or "case")
+    )
+    if Path(filename).suffix.lower() not in {".md", ".markdown"}:
+        filename = f"{filename}.md"
+    return filename
+
+
+def _save_markdown_case(content: str, filename: str) -> tuple[Path, int]:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    target_path = UPLOAD_DIR / f"{uuid4().hex}-{filename}"
+    target_path.write_text(content, encoding="utf-8")
     return target_path, target_path.stat().st_size
 
 
@@ -136,6 +155,11 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _ensure_elasticsearch_index(server_config) -> None:
+    dispatcher = ElasticsearchDispatch(server_config=server_config)
+    dispatcher.close()
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     fastapi_app.state.server_config = load_server_config()
@@ -145,6 +169,14 @@ async def lifespan(fastapi_app: FastAPI):
         fastapi_app.state.server_config.environment,
         UPLOAD_DIR,
     )
+    LOGGER.info(
+        "Ensuring Elasticsearch pipeline/index index=%s pipeline=%s",
+        fastapi_app.state.server_config.elastic_index_name,
+        fastapi_app.state.server_config.elastic_pipeline_name,
+    )
+    _ensure_elasticsearch_index(fastapi_app.state.server_config)
+    LOGGER.info("Elasticsearch pipeline/index ready")
+
     fastapi_app.state.metrics_manager, fastapi_app.state.metrics_store = (
         _build_metrics_store()
     )
@@ -233,6 +265,74 @@ async def ingest_file(
         job.job_id,
         server_config.inbound_queue_name,
         stored_path,
+    )
+
+    return {
+        "job": job.to_queue_message(),
+        "queue": server_config.inbound_queue_name,
+        "job_status_url": f"/api/v1/ingest/jobs/{job.job_id}",
+        "next_step": "processing worker picks the job and sends result to dispatcher",
+    }
+
+
+@app.post("/api/v1/ingest/case")
+async def ingest_case(
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+):
+    content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="content must be a non-empty Markdown string",
+        )
+
+    server_config = request.app.state.server_config
+    filename = _case_filename(payload)
+    stored_path, size_bytes = _save_markdown_case(content, filename)
+    document_metadata = {
+        key: value for key, value in payload.items() if key != "content"
+    }
+    source = str(payload.get("source") or "elastic-workflow")
+    LOGGER.info(
+        "Received case JSON filename=%s size_bytes=%s stored_path=%s",
+        filename,
+        size_bytes,
+        stored_path,
+    )
+
+    job = Job.create(
+        parser_type="docling",
+        input_data={
+            "source": source,
+            "file_name": filename,
+            "file_path": str(stored_path),
+            "mime_type": "text/markdown",
+            "size_bytes": size_bytes,
+            "collection_name": _CASE_ELASTIC_INDEX_NAME,
+            "document_metadata": document_metadata,
+        },
+        chunker_type="token",
+        settings={
+            "queue": server_config.inbound_queue_name,
+            "elastic_index_name": _CASE_ELASTIC_INDEX_NAME,
+        },
+    )
+
+    request.app.state.metrics_store.create_for_job(job)
+    request.app.state.metrics_store.update(
+        job.job_id,
+        collection_name=_CASE_ELASTIC_INDEX_NAME,
+        document_metadata=document_metadata,
+        deleted=False,
+    )
+    local_queue.put(job)
+    LOGGER.info(
+        "Queued case ingest job job_id=%s queue=%s file_path=%s index=%s",
+        job.job_id,
+        server_config.inbound_queue_name,
+        stored_path,
+        _CASE_ELASTIC_INDEX_NAME,
     )
 
     return {

@@ -60,7 +60,7 @@ interface UploadFileStateOptions {
 export const useUploadFileState = ({
   acceptedTypes,
   maxFileSize,
-  maxFiles = 100,
+  maxFiles = 500,
   audioFileMaxSize,
   onFilesChange
 }: UploadFileStateOptions) => {

@@ -226,7 +226,8 @@ The dispatcher connects to:
 | `ELASTIC_HOSTS` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
 | Index | `open-rag-embeddings-v4` |
 | Pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
-| Inference ID | `openai-text_embedding-octen-embedding-4b` |
+| Ingest inference ID | `text_embedding-octen-embedding-4b_ingest` |
+| Search inference ID | `text_embedding-octen-embedding-4b_search` |
 | Bulk batch size | `20` |
 | Bulk timeout | `30m` |
 | Bulk request timeout | `1800s` |
@@ -279,7 +280,7 @@ Pipeline processors:
 | 4 | `remove` | Removes temporary or legacy fields |
 | failure | `set` | Writes failures to `ingest_error` |
 
-The index mapping stores returned chunk text in `content` as indexed plain text. It stores `content_dense` as dense `semantic_text` with inference endpoint `openai-text_embedding-octen-embedding-4b`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `naver-splade-v3`. Large generated fields (`content_dense` and `content_sparse`) are excluded from `_source` while remaining searchable. Titles and headings remain in `_source`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
+The index mapping stores returned chunk text in `content` as indexed plain text. It stores `content_dense` as dense `semantic_text` with ingest endpoint `text_embedding-octen-embedding-4b_ingest` and search endpoint `text_embedding-octen-embedding-4b_search`. It stores `content_sparse`, `clean_title`, and `headings` as sparse `semantic_text` with inference endpoint `naver-splade-v3`. Large generated fields (`content_dense` and `content_sparse`) are excluded from `_source` while remaining searchable. Titles and headings remain in `_source`. Automatic semantic chunking is disabled because the app already pre-chunks documents.
 
 ## Kibana Agentic Chat Retrieval
 

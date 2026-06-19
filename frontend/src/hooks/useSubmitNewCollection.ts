@@ -23,6 +23,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { APIMetadataField } from "../types/collections";
 import type { CreateCollectionPayload } from "../types/api";
 
+type CreateCollectionResponse = {
+  collection?: {
+    collection_name?: string;
+  };
+};
+
 export function useSubmitNewCollection() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -91,10 +97,10 @@ export function useSubmitNewCollection() {
     setError(null);
     
     try {
-      await new Promise((resolve, reject) => {
+      const createdCollection = await new Promise<CreateCollectionResponse>((resolve, reject) => {
         createCollection.mutate(collectionPayload, {
           onSuccess: (data) => {
-            resolve(data);
+            resolve(data as CreateCollectionResponse);
           },
           onError: (error) => {
             console.error("❌ Collection creation failed:", error);
@@ -105,6 +111,9 @@ export function useSubmitNewCollection() {
 
       await queryClient.invalidateQueries({ queryKey: ["collections"] });
       await queryClient.refetchQueries({ queryKey: ["collections"] });
+
+      const canonicalCollectionName =
+        createdCollection.collection?.collection_name || collectionName;
 
       if (selectedFiles.length > 0) {
         const formData = new FormData();
@@ -174,7 +183,7 @@ export function useSubmitNewCollection() {
         };
 
         const metadata = {
-          collection_name: collectionName,
+          collection_name: canonicalCollectionName,
           blocking: false,
           generate_summary: collectionConfig.generateSummary,
           custom_metadata: selectedFiles.map((file) => {
@@ -208,7 +217,7 @@ export function useSubmitNewCollection() {
         if (data?.task_id) {
           const taskData = {
             id: data.task_id,
-            collection_name: collectionName,
+            collection_name: String(data.collection_name || canonicalCollectionName),
             documents: selectedFiles.map((f) => f.name),
             state: "PENDING" as const,
             created_at: new Date().toISOString(),

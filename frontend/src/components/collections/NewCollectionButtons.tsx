@@ -53,6 +53,13 @@ const useResponsiveScreen = () => {
   return { screenSize, isMobile, isTablet, isDesktop };
 };
 
+const canonicalCollectionName = (name: string) => {
+  const lower = name.trim().toLowerCase();
+  const base = lower.startsWith("open-rag-") ? lower.slice("open-rag-".length) : lower;
+  const slug = base.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug ? `open-rag-${slug}` : "";
+};
+
 export default function NewCollectionButtons() {
   const navigate = useNavigate();
   const { collectionName, collectionNameTouched, metadataSchema, fileMetadata, selectedFiles, isLoading, hasInvalidFiles, error, setError } =
@@ -78,15 +85,15 @@ export default function NewCollectionButtons() {
       return;
     }
 
-    const valid = /^[_a-zA-Z][_a-zA-Z0-9_]*$/.test(trimmed);
-    if (!valid) {
-      setNameError(
-        "Name must start with a letter/underscore and contain only alphanumerics and underscores"
-      );
+    const canonical = canonicalCollectionName(trimmed);
+    if (!canonical) {
+      setNameError("Name must include at least one letter or number");
       return;
     }
 
-    const dup = existing.some((c: Collection) => c.collection_name === trimmed);
+    const dup = existing.some(
+      (c: Collection) => canonicalCollectionName(c.collection_name) === canonical
+    );
     if (dup) {
       setNameError("A collection with this name already exists");
       return;

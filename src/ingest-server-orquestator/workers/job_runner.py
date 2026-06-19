@@ -176,7 +176,10 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
         current_stage = JobStage.DISPATCHING
         progress.mark_stage(current_stage, "Sending chunks to Elasticsearch.")
         LOGGER.info("Dispatching chunks job_id=%s count=%s", job.job_id, len(chunks))
-        dispatcher = ElasticsearchDispatch(server_config=settings)
+        dispatcher_kwargs = {}
+        if job.settings.get("elastic_index_name"):
+            dispatcher_kwargs["index_name"] = str(job.settings["elastic_index_name"])
+        dispatcher = ElasticsearchDispatch(server_config=settings, **dispatcher_kwargs)
         stage_started_at = perf_counter()
         dispatcher.dispatch_chunks(chunks)
         progress.chunks_dispatched(len(chunks))

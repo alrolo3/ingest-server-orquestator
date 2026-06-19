@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
+import re
 import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -23,6 +24,7 @@ from config.config import ServerConfig
 from config.config import load_server_config
 from config.paths import OUTPUT_DIR
 from config.paths import UPLOAD_DIR
+from dispatcher.elastic.elastic import ElasticsearchDispatch
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
 from queues.queue_local import local_queue
@@ -68,6 +70,10 @@ _ELASTIC_DOCUMENT_SOURCE_FIELDS = [
     "ingested_at",
     "document_metadata",
 ]
+
+_OPEN_RAG_PREFIX = "open-rag-"
+_CASE_INDEX_NAME = "case-rag"
+_SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
 
 
 def _server_config(request: Request) -> ServerConfig:
@@ -170,9 +176,102 @@ def _metadata_for_file(payload: dict[str, Any], filename: str) -> dict[str, Any]
     return {}
 
 
+def _canonical_collection_name(value: object, config: ServerConfig) -> str:
+    raw = str(value or config.elastic_index_name).strip().lower()
+    if raw.startswith(_OPEN_RAG_PREFIX):
+        raw = raw[len(_OPEN_RAG_PREFIX):]
+    slug = _SLUG_SEPARATORS.sub("-", raw).strip("-")
+    if not slug:
+        raise HTTPException(status_code=400, detail="collection_name is invalid")
+    return f"{_OPEN_RAG_PREFIX}{slug}"
+
+
+def _default_collection_name(config: ServerConfig) -> str:
+    return _canonical_collection_name(config.elastic_index_name, config)
+
+
+def _collection_catalog(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "metadata_schema": payload.get("metadata_schema") or list(_DEFAULT_METADATA_SCHEMA),
+        "description": payload.get("description"),
+        "tags": payload.get("tags") or [],
+        "owner": payload.get("owner"),
+        "created_by": payload.get("created_by"),
+        "business_domain": payload.get("business_domain"),
+        "status": payload.get("status") or "Active",
+    }
+
+
+def _index_meta(index_data: dict[str, Any]) -> dict[str, Any]:
+    mappings = index_data.get("mappings")
+    if not isinstance(mappings, dict):
+        return {}
+    meta = mappings.get("_meta")
+    return dict(meta) if isinstance(meta, dict) else {}
+
+
+def _elastic_collection_catalogs(
+    request: Request,
+    config: ServerConfig,
+) -> dict[str, dict[str, Any]]:
+    client = _elasticsearch_client(request, config)
+    if client is None or not hasattr(client, "indices"):
+        return {}
+    try:
+        response = client.indices.get_mapping(
+            index=f"{_OPEN_RAG_PREFIX}*",
+            expand_wildcards="open",
+            ignore_unavailable=True,
+        )
+    except Exception as exc:
+        LOGGER.warning("Failed to list Elasticsearch collection indices: %s", exc)
+        return {}
+
+    catalogs = {}
+    for index_name, index_data in _response_body(response).items():
+        if not str(index_name).startswith(_OPEN_RAG_PREFIX):
+            continue
+        if not isinstance(index_data, dict):
+            continue
+        collection = _index_meta(index_data).get("collection")
+        catalogs[str(index_name)] = dict(collection) if isinstance(collection, dict) else {}
+    return catalogs
+
+
+def _ensure_collection_index(
+    request: Request,
+    config: ServerConfig,
+    collection_name: str,
+    catalog: dict[str, Any],
+) -> None:
+    dispatcher = ElasticsearchDispatch(
+        server_config=config,
+        index_name=collection_name,
+    )
+    dispatcher.close()
+
+    client = _elasticsearch_client(request, config)
+    if client is None or not hasattr(client, "indices"):
+        return
+
+    meta = {}
+    try:
+        response = client.indices.get_mapping(index=collection_name)
+        index_data = _response_body(response).get(collection_name, {})
+        if isinstance(index_data, dict):
+            meta = _index_meta(index_data)
+    except Exception as exc:
+        LOGGER.warning("Failed to read collection mapping metadata: %s", exc)
+
+    meta["collection"] = catalog
+    client.indices.put_mapping(index=collection_name, _meta=meta)
+
+
 def _job_collection(job: dict[str, Any], config: ServerConfig) -> str:
     value = job.get("collection_name") or config.elastic_index_name
-    return str(value)
+    if str(value) == _CASE_INDEX_NAME:
+        return _CASE_INDEX_NAME
+    return _canonical_collection_name(value, config)
 
 
 def _visible_jobs(
@@ -195,29 +294,11 @@ def _visible_jobs(
     return sorted(jobs, key=lambda job: str(job.get("created_at") or ""))
 
 
-def _collection_filter(collection_name: str, config: ServerConfig) -> dict[str, Any]:
-    if collection_name != config.elastic_index_name:
-        return {"term": {"collection_name": collection_name}}
-    return {
-        "bool": {
-            "should": [
-                {"term": {"collection_name": collection_name}},
-                {"bool": {"must_not": [{"exists": {"field": "collection_name"}}]}},
-            ],
-            "minimum_should_match": 1,
-        }
-    }
-
-
 def _elastic_document_query(
-    config: ServerConfig,
     *,
-    collection_name: str | None = None,
     task_id: str | None = None,
 ) -> dict[str, Any]:
     filters: list[dict[str, Any]] = []
-    if collection_name:
-        filters.append(_collection_filter(collection_name, config))
     if task_id:
         filters.append({"term": {"task_id": task_id}})
 
@@ -287,6 +368,18 @@ def _first_hit_source(bucket: dict[str, Any]) -> dict[str, Any]:
     return source if isinstance(source, dict) else {}
 
 
+def _first_hit_index(bucket: dict[str, Any]) -> str | None:
+    hits = (
+        bucket.get("first_chunk", {})
+        .get("hits", {})
+        .get("hits", [])
+    )
+    if not hits:
+        return None
+    index_name = hits[0].get("_index")
+    return str(index_name) if index_name else None
+
+
 def _int_or_none(value: Any) -> int | None:
     if value is None:
         return None
@@ -306,12 +399,11 @@ def _elastic_document_jobs(
     client = _elasticsearch_client(request, config)
     if client is None:
         return []
+    search_index = collection_name or f"{_OPEN_RAG_PREFIX}*"
     try:
         response = client.search(
-            index=config.elastic_index_name,
+            index=search_index,
             body=_elastic_document_query(
-                config,
-                collection_name=collection_name,
                 task_id=task_id,
             ),
         )
@@ -330,6 +422,7 @@ def _elastic_document_jobs(
         if not isinstance(bucket, dict):
             continue
         source = _first_hit_source(bucket)
+        hit_index = _first_hit_index(bucket)
         document_id = str(source.get("document_id") or bucket.get("key") or "")
         if not document_id:
             continue
@@ -353,7 +446,10 @@ def _elastic_document_jobs(
                 "status": "done",
                 "stage": "done",
                 "collection_name": str(
-                    source.get("collection_name") or config.elastic_index_name
+                    source.get("collection_name")
+                    or hit_index
+                    or collection_name
+                    or config.elastic_index_name
                 ),
                 "task_id": source.get("task_id"),
                 "size_bytes": _int_or_none(source.get("source_size_bytes")),
@@ -384,6 +480,8 @@ def _visible_jobs_for_request(
     task_id: str | None = None,
 ) -> list[dict[str, Any]]:
     config = _server_config(request)
+    if collection_name:
+        collection_name = _canonical_collection_name(collection_name, config)
     store = _metrics_store(request)
     memory_jobs = _visible_jobs(store, config, collection_name=collection_name)
     if task_id:
@@ -459,14 +557,26 @@ def _collections(request: Request) -> list[dict[str, Any]]:
     config = _server_config(request)
     stored = _state_dict(request, "frontend_collections")
     deleted = _state_set(request, "frontend_deleted_collections")
+    catalogs = _elastic_collection_catalogs(request, config)
     jobs = _visible_jobs_for_request(request)
-    names = {config.elastic_index_name}
-    names.update(stored)
-    names.update(_job_collection(job, config) for job in jobs)
+    names = {_default_collection_name(config)}
+    names.update(catalogs)
+    names.update(
+        _canonical_collection_name(name, config)
+        for name in stored
+    )
+    names.update(
+        name
+        for name in (_job_collection(job, config) for job in jobs)
+        if name.startswith(_OPEN_RAG_PREFIX)
+    )
     records = []
     for name in sorted(names):
         if name in deleted:
             continue
+        stored_collection = {}
+        stored_collection.update(catalogs.get(name, {}))
+        stored_collection.update(stored.get(name, {}))
         collection_jobs = [
             job
             for job in jobs
@@ -477,7 +587,7 @@ def _collections(request: Request) -> list[dict[str, Any]]:
                 name=name,
                 config=config,
                 jobs=collection_jobs,
-                stored_collection=stored.get(name),
+                stored_collection=stored_collection,
             )
         )
     return records
@@ -550,7 +660,7 @@ def _task_state(jobs: list[dict[str, Any]]) -> str:
 
 
 def _task_response(task_id: str, jobs: list[dict[str, Any]], config: ServerConfig) -> dict[str, Any]:
-    collection_name = _job_collection(jobs[0], config) if jobs else config.elastic_index_name
+    collection_name = _job_collection(jobs[0], config) if jobs else _default_collection_name(config)
     state = _task_state(jobs)
     completed_jobs = [
         job
@@ -705,21 +815,18 @@ async def frontend_create_collection(
     request: Request,
     payload: dict[str, Any] = Body(...),
 ) -> dict[str, Any]:
-    collection_name = str(payload.get("collection_name") or "").strip()
-    if not collection_name:
+    config = _server_config(request)
+    raw_collection_name = str(payload.get("collection_name") or "").strip()
+    if not raw_collection_name:
         raise HTTPException(status_code=400, detail="collection_name is required")
+    collection_name = _canonical_collection_name(raw_collection_name, config)
+    catalog = _collection_catalog(payload)
+    _ensure_collection_index(request, config, collection_name, catalog)
+
     stored = _state_dict(request, "frontend_collections")
     deleted = _state_set(request, "frontend_deleted_collections")
     deleted.discard(collection_name)
-    stored[collection_name] = {
-        "metadata_schema": payload.get("metadata_schema") or list(_DEFAULT_METADATA_SCHEMA),
-        "description": payload.get("description"),
-        "tags": payload.get("tags") or [],
-        "owner": payload.get("owner"),
-        "created_by": payload.get("created_by"),
-        "business_domain": payload.get("business_domain"),
-        "status": payload.get("status") or "Active",
-    }
+    stored[collection_name] = catalog
     collection = next(
         item
         for item in _collections(request)
@@ -740,14 +847,34 @@ async def frontend_delete_collections(
     deleted = _state_set(request, "frontend_deleted_collections")
     store = _metrics_store(request)
     config = _server_config(request)
-    for collection_name in collection_names:
+    default_collection_name = _default_collection_name(config)
+    canonical_names = [
+        _canonical_collection_name(collection_name, config)
+        for collection_name in collection_names
+    ]
+    for collection_name in canonical_names:
+        if collection_name == default_collection_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Default collection cannot be deleted",
+            )
+        if not collection_name.startswith(_OPEN_RAG_PREFIX):
+            raise HTTPException(status_code=400, detail="Invalid collection index")
+
+    client = _elasticsearch_client(request, config)
+    for collection_name in canonical_names:
+        if client is not None and hasattr(client, "indices"):
+            client.indices.delete(
+                index=collection_name,
+                ignore_unavailable=True,
+            )
         stored.pop(collection_name, None)
         deleted.add(collection_name)
         for job in _visible_jobs(store, config, collection_name=collection_name):
             store.update(str(job["job_id"]), deleted=True)
     return {
-        "message": "Collections removed from frontend catalog.",
-        "collections": collection_names,
+        "message": "Collections deleted.",
+        "collections": canonical_names,
     }
 
 
@@ -780,7 +907,10 @@ async def frontend_upload_documents(
     config = _server_config(request)
     store = _metrics_store(request)
     payload = _parse_upload_data(data)
-    collection_name = str(payload.get("collection_name") or config.elastic_index_name)
+    collection_name = _canonical_collection_name(
+        payload.get("collection_name") or config.elastic_index_name,
+        config,
+    )
     task_id = uuid4().hex
 
     stored = _state_dict(request, "frontend_collections")
@@ -819,6 +949,7 @@ async def frontend_upload_documents(
                 "queue": config.inbound_queue_name,
                 "task_id": task_id,
                 "collection_name": collection_name,
+                "elastic_index_name": collection_name,
                 "blocking": blocking,
             },
         )
@@ -856,6 +987,7 @@ async def frontend_delete_documents(
     document_names: list[str] = Body(default=[]),
 ) -> dict[str, Any]:
     config = _server_config(request)
+    collection_name = _canonical_collection_name(collection_name, config)
     store = _metrics_store(request)
     deleted_count = 0
     for job in _visible_jobs(store, config, collection_name=collection_name):
@@ -911,6 +1043,8 @@ async def frontend_document_summary(
     collection_name: str = Query(...),
     file_name: str = Query(...),
 ) -> dict[str, Any]:
+    config = _server_config(request)
+    collection_name = _canonical_collection_name(collection_name, config)
     job = _document_job(
         request=request,
         collection_name=collection_name,
@@ -992,9 +1126,12 @@ def _chat_answer(request: Request, payload: dict[str, Any]) -> str:
     config = _server_config(request)
     selected = payload.get("collection_names")
     if isinstance(selected, list) and selected:
-        collection_names = [str(name) for name in selected]
+        collection_names = [
+            _canonical_collection_name(name, config)
+            for name in selected
+        ]
     else:
-        collection_names = [config.elastic_index_name]
+        collection_names = [_default_collection_name(config)]
     jobs = [
         job
         for collection_name in collection_names

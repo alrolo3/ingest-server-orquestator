@@ -40,7 +40,9 @@ export function useUploadDocuments() {
         if (responseData?.task_id) {
           const taskData = {
             id: responseData.task_id,
-            collection_name: String(data.metadata.collection_name),
+            collection_name: String(
+              responseData.collection_name || data.metadata.collection_name
+            ),
             documents: data.files.map((f) => f.name),
             state: "PENDING" as const,
             created_at: new Date().toISOString(),

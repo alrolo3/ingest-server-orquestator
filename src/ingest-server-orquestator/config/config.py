@@ -16,7 +16,8 @@ _DEFAULT_ELASTIC_HOSTS = ["https://localhost:9200"]
 _DEFAULT_ELASTIC_API_KEY = (
     "RW9RbG1aNEJ4QVZwbFVaNjNhOEc6QTY1b1V2cDU4MUUxWHZjeTkxTkx4UQ=="
 )
-_DEFAULT_ELASTIC_INFERENCE_ID = "openai-text_embedding-octen-embedding-4b"
+_DEFAULT_ELASTIC_INFERENCE_ID = "text_embedding-octen-embedding-4b_ingest"
+_DEFAULT_ELASTIC_SEARCH_INFERENCE_ID = "text_embedding-octen-embedding-4b_search"
 _APP_NAME = "ingest-server-orquestator"
 _INBOUND_QUEUE_NAME = "inbound"
 _WORKER_MAX_WORKERS = 1
@@ -118,6 +119,7 @@ class ServerConfig:
     elastic_index_name: str = "open-rag-embeddings-v4"
     elastic_pipeline_name: str = "open_rag_embeddings_v4_multilingual_semantic_pipeline"
     elastic_inference_id: str = _DEFAULT_ELASTIC_INFERENCE_ID
+    elastic_search_inference_id: str = _DEFAULT_ELASTIC_SEARCH_INFERENCE_ID
     elastic_verify_certs: bool = False
     elastic_ssl_show_warn: bool = False
     elastic_http_compress: bool = True
@@ -351,6 +353,10 @@ def _load_server_config_from_env() -> ServerConfig:
         elastic_inference_id=getenv(
             "ELASTIC_INFERENCE_ID",
             _DEFAULT_ELASTIC_INFERENCE_ID,
+        ),
+        elastic_search_inference_id=getenv(
+            "ELASTIC_SEARCH_INFERENCE_ID",
+            _DEFAULT_ELASTIC_SEARCH_INFERENCE_ID,
         ),
         elastic_verify_certs=_env_bool("ELASTIC_VERIFY_CERTS", False),
         elastic_ssl_show_warn=_env_bool("ELASTIC_SSL_SHOW_WARN", False),

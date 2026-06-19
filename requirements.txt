@@ -7,6 +7,8 @@ easyocr==1.7.2
 elasticsearch==9.4.1
 fastapi==0.136.3
 mineru-vl-utils==1.0.4
+openai==1.109.1
+platformdirs==4.10.0
 python-multipart==0.0.32
 torch==2.12.0
 transformers==5.9.0

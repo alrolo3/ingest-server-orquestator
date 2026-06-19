@@ -86,7 +86,7 @@ export const FileUploadZone = ({
           <Text kind="body/regular/md">or drag and drop them here.</Text>
         </Flex>
         <Text kind="body/regular/sm" style={{ color: 'var(--text-color-subtle)' }}>
-          Accepted: {acceptedTypes.join(', ')} • Up to {maxFileSize} MB • Max 100 files per batch
+          Accepted: {acceptedTypes.join(', ')} • Up to {maxFileSize} MB • Max 500 files per batch
           {audioFileMaxSize && audioFileMaxSize !== maxFileSize && (
             <span> • Audio files (.mp3, .wav): up to {audioFileMaxSize} MB</span>
           )}

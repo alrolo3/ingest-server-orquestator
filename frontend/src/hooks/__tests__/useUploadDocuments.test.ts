@@ -34,7 +34,7 @@ describe('useUploadDocuments', () => {
     const mockResponse = {
       ok: true,
       json: () => Promise.resolve({ 
-        collection_name: 'test-collection',
+        collection_name: 'open-rag-test-collection',
         task_id: 'task-123'
       })
     };
@@ -68,7 +68,7 @@ describe('useUploadDocuments', () => {
     // Should no longer be pending
     expect(result.current.isPending).toBe(false);
     expect(onSuccess).toHaveBeenCalledWith({
-      collection_name: 'test-collection',
+      collection_name: 'open-rag-test-collection',
       task_id: 'task-123'
     });
   });
@@ -195,7 +195,7 @@ describe('useUploadDocuments', () => {
     const mockResponse = {
       ok: true,
       json: () => Promise.resolve({ 
-        collection_name: 'test-collection',
+        collection_name: 'open-rag-test-collection',
         task_id: 'task-123'
       })
     };
@@ -207,7 +207,7 @@ describe('useUploadDocuments', () => {
       result.current.mutate(
         { 
           files: [new File(['content'], 'test.txt')], 
-          metadata: { collection_name: 'test-collection' } 
+          metadata: { collection_name: 'Test Collection' }
         },
         { onSuccess: vi.fn() }
       );
@@ -219,7 +219,7 @@ describe('useUploadDocuments', () => {
     
     expect(mockAddTaskNotification).toHaveBeenCalledWith({
       id: 'task-123',
-      collection_name: 'test-collection',
+      collection_name: 'open-rag-test-collection',
       documents: ['test.txt'],
       created_at: expect.any(String),
       state: 'PENDING'

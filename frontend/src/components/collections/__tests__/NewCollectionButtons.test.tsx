@@ -200,7 +200,7 @@ describe('NewCollectionButtons', () => {
   describe('Name Validation', () => {
     it('shows error for invalid name format', () => {
       mockUseNewCollectionStore.mockReturnValue({
-        collectionName: '123invalid',
+        collectionName: '!!!',
         collectionNameTouched: false,
         metadataSchema: [],
         fileMetadata: {},
@@ -213,16 +213,16 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      expect(screen.getByText(/Name must start with a letter\/underscore and contain only alphanumerics and underscores/)).toBeInTheDocument();
+      expect(screen.getByText(/Name must include at least one letter or number/)).toBeInTheDocument();
     });
 
     it('shows error for duplicate collection name', () => {
       mockUseCollections.mockReturnValue({
-        data: [{ collection_name: 'existing_collection' }]
+        data: [{ collection_name: 'open-rag-existing-collection' }]
       });
 
       mockUseNewCollectionStore.mockReturnValue({
-        collectionName: 'existing_collection',
+        collectionName: 'Existing Collection',
         collectionNameTouched: false,
         metadataSchema: [],
         fileMetadata: {},
@@ -240,7 +240,7 @@ describe('NewCollectionButtons', () => {
 
     it('does not show error for valid name', () => {
       mockUseNewCollectionStore.mockReturnValue({
-        collectionName: 'valid_collection_123',
+        collectionName: 'Valid Collection 123',
         collectionNameTouched: false,
         metadataSchema: [],
         fileMetadata: {},
@@ -253,7 +253,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      expect(screen.queryByText(/Name must start/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Name must include/)).not.toBeInTheDocument();
       expect(screen.queryByText(/already exists/)).not.toBeInTheDocument();
     });
 
@@ -272,10 +272,10 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      expect(screen.queryByText(/Name must start/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Name must include/)).not.toBeInTheDocument();
     });
 
-    it('rejects names starting with numbers', () => {
+    it('accepts names starting with numbers', () => {
       mockUseNewCollectionStore.mockReturnValue({
         collectionName: '123invalid',
         collectionNameTouched: false,
@@ -290,7 +290,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      expect(screen.getByText(/Name must start with a letter\/underscore and contain only alphanumerics and underscores/)).toBeInTheDocument();
+      expect(screen.queryByText(/Name must include/)).not.toBeInTheDocument();
     });
   });
 
@@ -387,7 +387,7 @@ describe('NewCollectionButtons', () => {
 
     it('calls setError when submit is attempted with name error', () => {
       mockUseNewCollectionStore.mockReturnValue({
-        collectionName: '123invalid',
+        collectionName: '!!!',
         collectionNameTouched: false,
         metadataSchema: [],
         fileMetadata: {},
@@ -432,7 +432,7 @@ describe('NewCollectionButtons', () => {
   describe('Error Display', () => {
     it('shows name error when name is invalid', () => {
       mockUseNewCollectionStore.mockReturnValue({
-        collectionName: '123invalid',
+        collectionName: '!!!',
         collectionNameTouched: false,
         metadataSchema: [],
         fileMetadata: {},
@@ -445,7 +445,7 @@ describe('NewCollectionButtons', () => {
 
       render(<NewCollectionButtons />);
       
-      expect(screen.getByText(/Name must start with a letter\/underscore and contain only alphanumerics and underscores/)).toBeInTheDocument();
+      expect(screen.getByText(/Name must include at least one letter or number/)).toBeInTheDocument();
     });
 
     it('shows API error from store when error prop is set', () => {

@@ -48,7 +48,8 @@ data:
   ELASTIC_HOSTS: https://elasticsearch-gpu-indexer:9200
   ELASTIC_INDEX_NAME: open-rag-embeddings-v4
   ELASTIC_PIPELINE_NAME: open_rag_embeddings_v4_multilingual_semantic_pipeline
-  ELASTIC_INFERENCE_ID: openai-text_embedding-octen-embedding-4b
+  ELASTIC_INFERENCE_ID: text_embedding-octen-embedding-4b_ingest
+  ELASTIC_SEARCH_INFERENCE_ID: text_embedding-octen-embedding-4b_search
   ELASTIC_VERIFY_CERTS: "false"
   ELASTIC_SSL_SHOW_WARN: "false"
   ELASTIC_HTTP_COMPRESS: "true"
@@ -185,6 +186,8 @@ spec:
       ports:
         - protocol: TCP
           port: 8000
+        - protocol: TCP
+          port: 4143
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -243,25 +246,6 @@ spec:
     - name: http
       port: 3000
       targetPort: http
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingest-frontend-from-traefik
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: ingest-frontend
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: traefik
-      ports:
-        - protocol: TCP
-          port: 3000
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware

@@ -8,6 +8,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from dispatcher.elastic.elastic import (
     DENSE_SEMANTIC_INFERENCE_ID,
+    DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
     ElasticsearchDispatch,
     OPEN_RAG_PIPELINE,
     RECOVERABLE_DOCUMENT_FIELD_MAPPINGS,
@@ -88,6 +89,8 @@ def _dispatch_with_bulk_client(
     dispatch = ElasticsearchDispatch.model_construct(
         index_name="rag-index",
         pipeline_name="rag-pipeline",
+        inference_id=DENSE_SEMANTIC_INFERENCE_ID,
+        search_inference_id=DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
         bulk_api_timeout="1m",
         bulk_request_timeout_seconds=30,
         bulk_batch_size=10,
@@ -123,6 +126,7 @@ class ElasticsearchDispatchTest(unittest.TestCase):
             index_name="rag-index",
             pipeline_name="rag-pipeline",
             inference_id=DENSE_SEMANTIC_INFERENCE_ID,
+            search_inference_id=DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
         )
         dispatch._client = FakeClient(index_exists=False)
 
@@ -136,7 +140,13 @@ class ElasticsearchDispatchTest(unittest.TestCase):
             calls[0]["settings"],
         )
         mappings = calls[0]["mappings"]
-        self.assertEqual(build_open_rag_mappings(DENSE_SEMANTIC_INFERENCE_ID), mappings)
+        self.assertEqual(
+            build_open_rag_mappings(
+                DENSE_SEMANTIC_INFERENCE_ID,
+                DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
+            ),
+            mappings,
+        )
         self.assertEqual(
             {"type": "text"},
             mappings["properties"]["content"],
@@ -144,6 +154,10 @@ class ElasticsearchDispatchTest(unittest.TestCase):
         self.assertEqual(
             DENSE_SEMANTIC_INFERENCE_ID,
             mappings["properties"]["content_dense"]["inference_id"],
+        )
+        self.assertEqual(
+            DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
+            mappings["properties"]["content_dense"]["search_inference_id"],
         )
         self.assertEqual(
             "cosine",
@@ -178,6 +192,7 @@ class ElasticsearchDispatchTest(unittest.TestCase):
             index_name="rag-index",
             pipeline_name="rag-pipeline",
             inference_id="custom-inference",
+            search_inference_id="custom-search-inference",
         )
         dispatch._client = FakeClient(index_exists=True)
 

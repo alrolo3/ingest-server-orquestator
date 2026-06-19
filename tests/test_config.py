@@ -11,6 +11,7 @@ from config import config as config_module
 from config.gpu import configure_gpu_environment
 from dispatcher.elastic.elastic import (
     DENSE_SEMANTIC_INFERENCE_ID,
+    DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
     OPEN_RAG_PIPELINE,
     build_open_rag_mappings,
 )
@@ -87,6 +88,10 @@ class ServerConfigTest(unittest.TestCase):
             settings.elastic_pipeline_name,
         )
         self.assertEqual(DENSE_SEMANTIC_INFERENCE_ID, settings.elastic_inference_id)
+        self.assertEqual(
+            DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
+            settings.elastic_search_inference_id,
+        )
         self.assertFalse(settings.elastic_verify_certs)
         self.assertFalse(settings.elastic_ssl_show_warn)
         self.assertTrue(settings.elastic_http_compress)
@@ -175,6 +180,7 @@ class ServerConfigTest(unittest.TestCase):
             "ELASTIC_INDEX_NAME": "custom-index",
             "ELASTIC_PIPELINE_NAME": "custom-pipeline",
             "ELASTIC_INFERENCE_ID": "custom-inference",
+            "ELASTIC_SEARCH_INFERENCE_ID": "custom-search-inference",
             "ELASTIC_VERIFY_CERTS": "true",
             "ELASTIC_SSL_SHOW_WARN": "1",
             "ELASTIC_HTTP_COMPRESS": "false",
@@ -276,6 +282,10 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual("custom-index", settings.elastic_index_name)
         self.assertEqual("custom-pipeline", settings.elastic_pipeline_name)
         self.assertEqual("custom-inference", settings.elastic_inference_id)
+        self.assertEqual(
+            "custom-search-inference",
+            settings.elastic_search_inference_id,
+        )
         self.assertTrue(settings.elastic_verify_certs)
         self.assertTrue(settings.elastic_ssl_show_warn)
         self.assertFalse(settings.elastic_http_compress)
@@ -302,15 +312,26 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(["https://elastic:9200"], settings.elastic_hosts)
 
     def test_elastic_mapping_uses_configured_inference_id(self) -> None:
-        mappings = build_open_rag_mappings("custom-inference")
+        mappings = build_open_rag_mappings(
+            "custom-inference",
+            "custom-search-inference",
+        )
 
         self.assertEqual(
             "custom-inference",
             mappings["_meta"]["inference_id"],
         )
         self.assertEqual(
+            "custom-search-inference",
+            mappings["_meta"]["search_inference_id"],
+        )
+        self.assertEqual(
             "custom-inference",
             mappings["properties"]["content_dense"]["inference_id"],
+        )
+        self.assertEqual(
+            "custom-search-inference",
+            mappings["properties"]["content_dense"]["search_inference_id"],
         )
         self.assertEqual(
             "cosine",

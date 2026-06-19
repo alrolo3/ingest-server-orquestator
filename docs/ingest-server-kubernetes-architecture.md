@@ -182,7 +182,8 @@ Live ConfigMap values include:
 | `ELASTIC_HOSTS` / `ELASTIC_URL` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
 | `ELASTIC_INDEX_NAME` | `open-rag-embeddings-v4` |
 | `ELASTIC_PIPELINE_NAME` | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
-| `ELASTIC_INFERENCE_ID` | `openai-text_embedding-octen-embedding-4b` |
+| `ELASTIC_INFERENCE_ID` | `text_embedding-octen-embedding-4b_ingest` |
+| `ELASTIC_SEARCH_INFERENCE_ID` | `text_embedding-octen-embedding-4b_search` |
 | `ELASTIC_BULK_BATCH_SIZE` | `20` |
 | `ELASTIC_VERIFY_CERTS` | `false` |
 
@@ -278,7 +279,7 @@ The target RAG index is `open-rag-embeddings-v4`.
 | Mapping field | Purpose |
 | --- | --- |
 | `content` | Returned chunk text stored in `_source` and indexed as plain text |
-| `content_dense` | Chunk content indexed as dense `semantic_text` with inference ID `openai-text_embedding-octen-embedding-4b`; excluded from `_source` |
+| `content_dense` | Chunk content indexed as dense `semantic_text` with ingest inference ID `text_embedding-octen-embedding-4b_ingest` and search inference ID `text_embedding-octen-embedding-4b_search`; excluded from `_source` |
 | `content_sparse` | Chunk content indexed as sparse `semantic_text` with inference ID `naver-splade-v3`; excluded from `_source` |
 | `clean_title` | Sanitized title indexed as sparse `semantic_text` with inference ID `naver-splade-v3` |
 | `headings` | Docling heading hierarchy indexed as sparse `semantic_text` with inference ID `naver-splade-v3` |
@@ -293,7 +294,8 @@ Live Elastic inference endpoints relevant to this stack:
 | Inference ID | Task | Routed URL |
 | --- | --- | --- |
 | `openai-chat_completion-nemotron-3-ultra` | chat completion | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
-| `openai-text_embedding-octen-embedding-4b` | text embedding | `http://inference-service.default.svc.cluster.local:4000/v1/embeddings` |
+| `text_embedding-octen-embedding-4b_ingest` | text embedding | `http://inference-service.default.svc.cluster.local:4000/v1/embeddings` |
+| `text_embedding-octen-embedding-4b_search` | text embedding | `http://inference-service.default.svc.cluster.local:4000/v1/embeddings` |
 | `qwen3-reranker-4b` | rerank | `http://inference-service.default.svc.cluster.local:4000/v2/rerank` |
 | `elastic-rerank-v1` | rerank | Native Elastic inference |
 | `.elser-2-elasticsearch` | sparse embedding | Native Elastic inference |

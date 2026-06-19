@@ -234,6 +234,73 @@ class JobRunnerTest(unittest.TestCase):
         self.assertEqual(1, record["chunks_created"])
         self.assertEqual(0, record["chunks_dispatched"])
 
+    def test_job_runner_passes_elasticsearch_index_override(self) -> None:
+        job = Job(
+            job_id="job-1",
+            parser_type="docling",
+            input_data={"file_name": "case.md", "source": "test"},
+            chunker_type="token",
+            settings={"elastic_index_name": "case-rag"},
+        )
+        parsed_document = SimpleNamespace(
+            title="Case",
+            source_file_name="case.md",
+            get_markdown=lambda: "# Case\n",
+        )
+        chunks = [
+            DocumentChunk(
+                content="case chunk",
+                content_sparse="case chunk",
+                document_id="doc-1",
+                chunk_id="chunk-1",
+                chunk_index=0,
+                chunking_strategy="token",
+                source_file_name="case.md",
+            )
+        ]
+        created = []
+
+        class FakeParser:
+            @staticmethod
+            def parse(_job, _progress):
+                return parsed_document
+
+        class FakeChunker:
+            @staticmethod
+            def chunk(_parsed_document, _progress):
+                return chunks
+
+        class CapturingDispatch:
+            def __init__(self, server_config, **kwargs):
+                self.server_config = server_config
+                self.kwargs = kwargs
+                created.append(self)
+
+            @staticmethod
+            def dispatch_chunks(_chunks):
+                return None
+
+        metrics = JobMetricsStore()
+        with TemporaryDirectory() as temp_dir:
+            with (
+                patch("workers.job_runner.OUTPUT_DIR", Path(temp_dir)),
+                patch("workers.job_runner.configure_torch_cuda_device"),
+                patch("workers.job_runner.torch.set_float32_matmul_precision"),
+                patch("workers.job_runner.DoclingParser", return_value=FakeParser()),
+                patch("workers.job_runner.DoclingChunker", return_value=FakeChunker()),
+                patch("workers.job_runner.ElasticsearchDispatch", CapturingDispatch),
+                patch("workers.job_runner.LOGGER.info"),
+            ):
+                job_runner(job, metrics)
+
+        self.assertEqual(1, len(created))
+        self.assertEqual({"index_name": "case-rag"}, created[0].kwargs)
+        record = metrics.get(job.job_id)
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual("done", record["status"])
+        self.assertEqual(1, record["chunks_dispatched"])
+
 
 if __name__ == "__main__":
     unittest.main()

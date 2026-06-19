@@ -1,5 +1,26 @@
-### Create custom text embedding inference endpoint
+### Create custom ingest text embedding inference endpoint
 PUT {{ELASTIC_URL}}/_inference/text_embedding/{{ELASTIC_INFERENCE_ID}}
+Authorization: Basic {{ELASTIC_AUTH}}
+Content-Type: application/json
+
+{
+  "service": "custom",
+  "service_settings": {
+    "url": "http://vllm-qwen3-embedding-4b:8006/v1/embeddings",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "request": "{\"model\": \"Qwen3-Embedding-4B\", \"input\": ${input}, \"encoding_format\": \"float\"}",
+    "response": {
+      "json_parser": {
+        "text_embeddings": "$.data[*].embedding"
+      }
+    }
+  }
+}
+
+### Create custom search text embedding inference endpoint
+PUT {{ELASTIC_URL}}/_inference/text_embedding/{{ELASTIC_SEARCH_INFERENCE_ID}}
 Authorization: Basic {{ELASTIC_AUTH}}
 Content-Type: application/json
 

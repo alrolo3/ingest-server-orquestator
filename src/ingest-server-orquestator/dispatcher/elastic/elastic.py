@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from elasticsearch import Elasticsearch
 
 
-DENSE_SEMANTIC_INFERENCE_ID = "openai-text_embedding-octen-embedding-4b"
+DENSE_SEMANTIC_INFERENCE_ID = "text_embedding-octen-embedding-4b_ingest"
+DENSE_SEMANTIC_SEARCH_INFERENCE_ID = "text_embedding-octen-embedding-4b_search"
 SPARSE_SEMANTIC_INFERENCE_ID = "naver-splade-v3"
 SPARSE_SEMANTIC_TASK_TYPE = "sparse_embedding"
 RETRYABLE_BULK_ITEM_STATUSES = {429, 500, 502, 503, 504}
@@ -32,6 +33,7 @@ MODEL_SETTINGS = {
 SEMANTIC_TEXT_FIELD = {
     "type": "semantic_text",
     "inference_id": DENSE_SEMANTIC_INFERENCE_ID,
+    "search_inference_id": DENSE_SEMANTIC_SEARCH_INFERENCE_ID,
     "model_settings": MODEL_SETTINGS,
     "index_options": {
         "dense_vector": {
@@ -356,9 +358,13 @@ OPEN_RAG_PIPELINE = {
 }
 
 
-def build_open_rag_mappings(inference_id: str) -> dict[str, Any]:
+def build_open_rag_mappings(
+    inference_id: str,
+    search_inference_id: str,
+) -> dict[str, Any]:
     mappings = deepcopy(OPEN_RAG_MAPPINGS)
     mappings["_meta"]["inference_id"] = inference_id
+    mappings["_meta"]["search_inference_id"] = search_inference_id
     mappings["_meta"]["sparse_semantic_inference"] = {
         "inference_id": SPARSE_SEMANTIC_INFERENCE_ID,
         "task_type": SPARSE_SEMANTIC_TASK_TYPE,
@@ -368,6 +374,7 @@ def build_open_rag_mappings(inference_id: str) -> dict[str, Any]:
     for field_name in ("content_sparse", "clean_title", "headings"):
         mappings["properties"][field_name] = deepcopy(SPARSE_SEMANTIC_TEXT_FIELD)
     mappings["properties"]["content_dense"]["inference_id"] = inference_id
+    mappings["properties"]["content_dense"]["search_inference_id"] = search_inference_id
     return mappings
 
 
@@ -381,6 +388,7 @@ class ElasticsearchDispatch(BaseModel):
     index_name: str
     pipeline_name: str
     inference_id: str
+    search_inference_id: str
     verify_certs: bool
     ssl_show_warn: bool
     http_compress: bool
@@ -403,6 +411,7 @@ class ElasticsearchDispatch(BaseModel):
             "index_name": config.elastic_index_name,
             "pipeline_name": config.elastic_pipeline_name,
             "inference_id": config.elastic_inference_id,
+            "search_inference_id": config.elastic_search_inference_id,
             "verify_certs": config.elastic_verify_certs,
             "ssl_show_warn": config.elastic_ssl_show_warn,
             "http_compress": config.elastic_http_compress,
@@ -430,6 +439,11 @@ class ElasticsearchDispatch(BaseModel):
             return Elasticsearch(**client_options)
         return Elasticsearch(**client_options, api_key=self.api_key)
 
+    def close(self) -> None:
+        close = getattr(self._client, "close", None)
+        if callable(close):
+            close()
+
     def _ensure_pipeline(self) -> None:
         pipeline = deepcopy(OPEN_RAG_PIPELINE)
         self._client.ingest.put_pipeline(
@@ -452,7 +466,10 @@ class ElasticsearchDispatch(BaseModel):
             settings={
                 "index.default_pipeline": self.pipeline_name,
             },
-            mappings=build_open_rag_mappings(self.inference_id),
+            mappings=build_open_rag_mappings(
+                self.inference_id,
+                self.search_inference_id,
+            ),
         )
 
     def dispatch_chunks(self, chunks: list[DocumentChunk]) -> None:

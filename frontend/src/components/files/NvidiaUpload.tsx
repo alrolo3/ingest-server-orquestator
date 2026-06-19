@@ -25,7 +25,7 @@ export default function NvidiaUpload({
   onFilesChange,
   acceptedTypes = ['.bmp', '.docx', '.html', '.jpeg', '.json', '.md', '.pdf', '.png', '.pptx', '.sh', '.tiff', '.txt', '.mp3', '.wav', '.mp4', '.mov', '.avi', '.mkv'],
   maxFileSize = 400,
-  maxFiles = 100,
+  maxFiles = 500,
   onValidationChange
 }: NvidiaUploadProps) {
   const { uploadFiles, addFiles, removeFile } = useUploadFileState({
@@ -60,4 +60,4 @@ export default function NvidiaUpload({
       />
     </Stack>
   );
-} 
+}
