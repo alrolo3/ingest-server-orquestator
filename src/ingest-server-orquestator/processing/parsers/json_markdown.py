@@ -10,6 +10,7 @@ class JsonToMarkdownPreprocessor:
     """Convert arbitrary JSON data into retrieval-friendly Markdown."""
 
     def from_file(self, path: Path, *, title: str | None = None) -> str:
+        """Read a UTF-8 JSON file and render it as Markdown."""
         try:
             raw = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
@@ -17,6 +18,7 @@ class JsonToMarkdownPreprocessor:
         return self.from_text(raw, title=title or path.stem)
 
     def from_text(self, raw: str, *, title: str = "JSON document") -> str:
+        """Parse JSON text and render objects, arrays, scalars, and tables."""
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:

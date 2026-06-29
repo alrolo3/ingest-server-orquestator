@@ -1,3 +1,4 @@
+import mimetypes
 from pathlib import Path
 
 from config.gpu import configure_gpu_environment
@@ -7,8 +8,8 @@ configure_gpu_environment()
 
 from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
-from docling.datamodel.backend_options import PdfBackendOptions
-from docling.datamodel.base_models import InputFormat
+from docling.datamodel.backend_options import HTMLBackendOptions, PdfBackendOptions
+from docling.datamodel.base_models import FormatToExtensions, InputFormat
 from docling.datamodel.chart_extraction_options import ChartExtractionModelOptions
 from docling.datamodel import settings as docling_settings
 from docling.datamodel.pipeline_options import (
@@ -24,9 +25,15 @@ from docling.datamodel.pipeline_options import (
 )
 from docling.document_converter import (
     DocumentConverter,
+    EmailFormatOption,
+    ExcelFormatOption,
+    HTMLFormatOption,
+    ImageFormatOption,
     MarkdownBackendOptions,
     MarkdownFormatOption,
     PdfFormatOption,
+    PowerpointFormatOption,
+    WordFormatOption,
 )
 from docling_core.types.doc.document import DocItemLabel, DoclingDocument
 from docling_pp_doc_layout.options import PPDocLayoutV3Options
@@ -54,6 +61,73 @@ _JSON_MIME_TYPES = {"application/json", "text/json"}
 _JSON_SUFFIXES = {".json"}
 _MARKDOWN_MIME_TYPES = {"text/markdown", "text/x-markdown"}
 _MARKDOWN_SUFFIXES = {".md", ".markdown"}
+_MSG_MIME_TYPES = {"application/vnd.ms-outlook", "application/x-msg"}
+_MSG_SUFFIXES = {".msg"}
+_SUPPORTED_FORMATS = [
+    InputFormat.PDF,
+    InputFormat.MD,
+    InputFormat.DOCX,
+    InputFormat.PPTX,
+    InputFormat.XLSX,
+    InputFormat.HTML,
+    InputFormat.EMAIL,
+    InputFormat.IMAGE,
+]
+_MODEL_PIPELINE_FORMATS = {InputFormat.PDF, InputFormat.IMAGE}
+
+
+def _docling_suffixes(input_format: InputFormat) -> set[str]:
+    return {f".{extension.lower()}" for extension in FormatToExtensions[input_format]}
+
+
+_FORMAT_SUFFIXES = {
+    InputFormat.PDF: _PDF_SUFFIXES,
+    InputFormat.MD: _MARKDOWN_SUFFIXES,
+    InputFormat.DOCX: _docling_suffixes(InputFormat.DOCX),
+    InputFormat.PPTX: _docling_suffixes(InputFormat.PPTX),
+    InputFormat.XLSX: _docling_suffixes(InputFormat.XLSX),
+    InputFormat.HTML: _docling_suffixes(InputFormat.HTML),
+    InputFormat.EMAIL: _docling_suffixes(InputFormat.EMAIL),
+    InputFormat.IMAGE: _docling_suffixes(InputFormat.IMAGE),
+}
+_FORMAT_MIME_TYPES = {
+    InputFormat.PDF: _PDF_MIME_TYPES,
+    InputFormat.MD: _MARKDOWN_MIME_TYPES,
+    InputFormat.DOCX: {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+    InputFormat.PPTX: {
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    },
+    InputFormat.XLSX: {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+    InputFormat.HTML: {"text/html", "application/xhtml+xml"},
+    InputFormat.EMAIL: {"message/rfc822"},
+    InputFormat.IMAGE: {
+        "image/bmp",
+        "image/jpeg",
+        "image/png",
+        "image/tiff",
+        "image/webp",
+    },
+}
+_DEFAULT_MIME_TYPES = {
+    InputFormat.PDF: "application/pdf",
+    InputFormat.MD: "text/markdown",
+    InputFormat.DOCX: (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+    InputFormat.PPTX: (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ),
+    InputFormat.XLSX: (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
+    InputFormat.HTML: "text/html",
+    InputFormat.EMAIL: "message/rfc822",
+    InputFormat.IMAGE: "application/octet-stream",
+}
 
 
 def _optional_int(value: object) -> int | None:
@@ -79,10 +153,18 @@ def _docling_input_format(source_path: Path, mime_type: str | None) -> InputForm
 
     if suffix in _JSON_SUFFIXES or _is_json_mime_type(normalized_mime_type):
         return _JSON_INPUT_FORMAT
-    if suffix in _MARKDOWN_SUFFIXES or normalized_mime_type in _MARKDOWN_MIME_TYPES:
-        return InputFormat.MD
-    if suffix in _PDF_SUFFIXES or normalized_mime_type in _PDF_MIME_TYPES:
-        return InputFormat.PDF
+    if suffix in _MSG_SUFFIXES or normalized_mime_type in _MSG_MIME_TYPES:
+        raise ValueError(
+            "Unsupported document format for Docling parser: "
+            ".msg files are not supported by the installed Docling API; upload .eml"
+        )
+
+    for input_format in _SUPPORTED_FORMATS:
+        if (
+            suffix in _FORMAT_SUFFIXES[input_format]
+            or normalized_mime_type in _FORMAT_MIME_TYPES[input_format]
+        ):
+            return input_format
 
     raise ValueError(
         "Unsupported document format for Docling parser: "
@@ -96,12 +178,13 @@ def _input_format_value(input_format: InputFormat | str) -> str:
     return input_format
 
 
-def _default_mime_type(input_format: InputFormat | str) -> str:
+def _default_mime_type(input_format: InputFormat | str, source_path: Path) -> str:
+    guessed_mime_type, _ = mimetypes.guess_type(source_path.name)
+    if guessed_mime_type:
+        return guessed_mime_type
     if input_format == _JSON_INPUT_FORMAT:
         return "application/json"
-    if input_format == InputFormat.MD:
-        return "text/markdown"
-    return "application/pdf"
+    return _DEFAULT_MIME_TYPES.get(input_format, "application/octet-stream")
 
 
 def _document_title(
@@ -246,18 +329,33 @@ def _record_docling_timings(
             progress.record_timing(f"docling_{name}", seconds)
 
 
+def _simple_pipeline_options() -> ConvertPipelineOptions:
+    return ConvertPipelineOptions(
+        artifacts_path=None,
+        enable_remote_services=False,
+        allow_external_plugins=False,
+    )
+
+
 def _markdown_format_option() -> MarkdownFormatOption:
     return MarkdownFormatOption(
-        pipeline_options=ConvertPipelineOptions(
-            artifacts_path=None,
-            enable_remote_services=False,
-            allow_external_plugins=False,
-        ),
+        pipeline_options=_simple_pipeline_options(),
         backend_options=MarkdownBackendOptions(
             enable_remote_fetch=False,
             enable_local_fetch=False,
             fetch_images=False,
         )
+    )
+
+
+def _html_format_option() -> HTMLFormatOption:
+    return HTMLFormatOption(
+        pipeline_options=_simple_pipeline_options(),
+        backend_options=HTMLBackendOptions(
+            enable_remote_fetch=False,
+            enable_local_fetch=False,
+            fetch_images=False,
+        ),
     )
 
 
@@ -267,7 +365,7 @@ def _json_markdown_title(source_file_name: str, source_path: Path) -> str:
 
 
 class DoclingParser(BaseModel):
-    """Parser implementation backed by Docling."""
+    """Parser that converts supported Docling inputs into a ParsedDocument."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -275,6 +373,7 @@ class DoclingParser(BaseModel):
     server_config: ServerConfig
 
     def parse(self, job: Job, progress: ProgressReporter) -> ParsedDocument:
+        """Run Docling conversion, collect metadata/timings, and return normalized output."""
 
         config_server: ServerConfig = self.server_config
 
@@ -285,7 +384,7 @@ class DoclingParser(BaseModel):
             source_path,
             str(raw_mime_type or ""),
         )
-        mime_type = str(raw_mime_type or _default_mime_type(input_format))
+        mime_type = str(raw_mime_type or _default_mime_type(input_format, source_path))
 
         #Sacar las options del job o de la app
 
@@ -400,10 +499,26 @@ class DoclingParser(BaseModel):
 
         format_options = {
             InputFormat.PDF: options,
+            InputFormat.IMAGE: ImageFormatOption(
+                pipeline_options=threaded_pipeline_options,
+            ),
             InputFormat.MD: _markdown_format_option(),
+            InputFormat.DOCX: WordFormatOption(
+                pipeline_options=_simple_pipeline_options(),
+            ),
+            InputFormat.PPTX: PowerpointFormatOption(
+                pipeline_options=_simple_pipeline_options(),
+            ),
+            InputFormat.XLSX: ExcelFormatOption(
+                pipeline_options=_simple_pipeline_options(),
+            ),
+            InputFormat.HTML: _html_format_option(),
+            InputFormat.EMAIL: EmailFormatOption(
+                pipeline_options=_simple_pipeline_options(),
+            ),
         }
         converter = DocumentConverter(
-            allowed_formats=[InputFormat.PDF, InputFormat.MD],
+            allowed_formats=list(_SUPPORTED_FORMATS),
             format_options=format_options)
 
         print("Starting conversion...")
@@ -413,7 +528,7 @@ class DoclingParser(BaseModel):
         )
         old_artifacts_path = docling_settings.settings.artifacts_path
         docling_settings.settings.debug.profile_pipeline_timings = True
-        if input_format in (InputFormat.MD, _JSON_INPUT_FORMAT):
+        if input_format not in _MODEL_PIPELINE_FORMATS:
             docling_settings.settings.artifacts_path = None
         with docling_progress(progress):
             try:

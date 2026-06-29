@@ -116,9 +116,9 @@ Every answer must finish with references.
 
 Choose page values in this order:
 
-1. `page_start` and `page_end`.
-2. `page_number`.
-3. `page_numbers`.
+1. `page_number`.
+2. `page_numbers`.
+3. Legacy `page_start` and `page_end`.
 4. `page unknown`.
 
 English:

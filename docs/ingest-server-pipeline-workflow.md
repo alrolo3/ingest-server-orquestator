@@ -1,23 +1,28 @@
 # Ingest Server Pipeline Workflow
 
-Snapshot date: 2026-06-09.
+This document describes the maintained runtime path from a user upload or shared
+folder drop to indexed Elasticsearch chunks and RAG retrieval. It is based on
+the checked-in source code and manifests. Concrete cluster counts, document
+counts, and pod health can drift; use `k8s/` and the live cluster for those.
 
-This document describes the full runtime path from a user uploading a file in the NVIDIA RAG React frontend to a user asking a grounded question in Kibana agentic chat and retrieving indexed document chunks. It combines Kubernetes state, Elasticsearch/Kibana workflow state, and repository source code.
+For class-level details, see `docs/python-class-guide.md`.
 
 ## End-To-End Summary
 
-1. A user opens `https://gradio.simona.local`, which Traefik now routes to the React frontend, and uploads one or more files.
-2. The frontend posts selected files to the internal ingest API at `http://ingest-server.default.svc.cluster.local:8000/api/documents?blocking=false` using NVIDIA RAG frontend-compatible multipart fields.
+1. A user opens `https://gradio.simona.local`, which Traefik routes to the React frontend, and uploads one or more files.
+2. The frontend posts selected files to the internal ingest API at `http://ingest-server:8000/api/documents?blocking=false` using NVIDIA RAG frontend-compatible multipart fields.
 3. The FastAPI ingest server writes the uploaded file to `/uploads`, creates a `Job`, records in-memory metrics, and enqueues the job in a process-local queue.
-4. The API process already has an `InboundWorker` thread running. It dequeues jobs and starts a spawned worker process with `ProcessPoolExecutor`.
-5. The worker parses the PDF, Markdown, or JSON file with Docling, preprocessing arbitrary JSON to Markdown before conversion and using local model artifacts and OCR settings from `ingest-server-config` for PDF processing.
-6. Docling picture description calls go through LiteLLM at `inference-service:4000` and then to vLLM.
-7. The parsed Docling document is chunked with a HuggingFace tokenizer from `/tokenizer`; chunks include page, source, title, token count, and Docling item metadata.
-8. The dispatcher bulk indexes the chunks into Elasticsearch index `open-rag-embeddings-v4` through pipeline `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
-9. The Elasticsearch pipeline normalizes metadata and indexes dense and sparse semantic fields through Elastic inference endpoints.
-10. A user opens `https://kibana.simona.local`, asks a question in agentic chat, and the enabled RAG workflow `rag-query-retrieval-tool-v4-conversation-aware` searches the indexed chunks.
-11. The workflow rewrites the question, runs semantic RRF retrieval, expands same-page and neighboring-page context, and returns grounding documents to the agent.
-12. The agent answers only from returned documents and includes references with file, page, and chunk metadata.
+4. Alternatively, `SharedFolderScanner` polls `/datastore/shared-ingest`, creates a `Job` for stable new or changed files, and enqueues it.
+5. The API process has an `InboundWorker` thread running. It dequeues jobs and starts a spawned worker process with `ProcessPoolExecutor`.
+6. The worker parses supported files with `DoclingParser`: PDF, Markdown, arbitrary JSON, DOCX, PPTX, XLSX, HTML, EML, and images. JSON is preprocessed to Markdown before conversion; PDFs and images use local model artifacts and OCR settings from `ingest-server-config`.
+7. Docling picture description calls go to the configured OpenAI-compatible chat endpoint.
+8. The parsed Docling document is chunked by `DoclingChunker` with a HuggingFace tokenizer from `/tokenizer`; chunks include page, source, title, token count, headings, and Docling item metadata.
+9. The worker writes Markdown and per-chunk JSON output to disk.
+10. `ElasticsearchDispatch` bulk indexes the chunks into Elasticsearch index `open-rag-embeddings-v4` through pipeline `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
+11. The Elasticsearch pipeline normalizes metadata and indexes dense and sparse semantic fields through Elastic inference endpoints.
+12. A user opens `https://kibana.simona.local`, asks a question in agentic chat, and the RAG workflow searches indexed chunks.
+13. The workflow rewrites the question, runs semantic RRF retrieval, expands same-page and neighboring-page context, and returns grounding documents to the agent.
+14. The agent answers only from returned documents and includes references with file, page, and chunk metadata.
 
 ## Ingestion Diagram
 
@@ -27,6 +32,7 @@ sequenceDiagram
     participant Traefik as Traefik gradio.simona.local
     participant Frontend as ingest-frontend React UI
     participant API as ingest-server FastAPI
+    participant Shared as SharedFolderScanner
     participant PVC as ingest-data-pvc uploads outputs
     participant Queue as LocalQueue metrics store
     participant Worker as InboundWorker spawned job_runner
@@ -44,18 +50,19 @@ sequenceDiagram
     API->>Queue: Create Job and metrics record
     API-->>Frontend: Return task_id and queued document list
     Frontend->>API: Poll /api/status?task_id=<task_id>
+    Shared->>Queue: Queue stable file from /datastore/shared-ingest
 
     Queue->>Worker: Dequeue job
-    Worker->>Docling: Parse PDF, Markdown, or JSON-derived Markdown
-    Docling->>LiteLLM: Picture descriptions /v1/chat/completions
+    Worker->>Docling: Parse supported document or JSON-derived Markdown
+    Docling->>LiteLLM: Picture descriptions /v1/chat/completions when enabled
     LiteLLM->>VLLMChat: Route to configured chat model
     Docling-->>Worker: ParsedDocument
     Worker->>Chunker: Create token chunks with page provenance
+    Worker->>PVC: Write markdown and chunk outputs
     Worker->>ES: Bulk index chunks with ingest pipeline
     ES->>LiteLLM: Embedding inference /v1/embeddings
     LiteLLM->>VLLMEmb: Qwen3-Embedding-4B
     ES-->>Worker: Bulk response
-    Worker->>PVC: Write markdown output under /outputs
     Worker->>Queue: Mark metrics done or failed
 ```
 
@@ -63,14 +70,15 @@ sequenceDiagram
 
 The React frontend is implemented in `frontend/` and is based on the NVIDIA RAG Blueprint frontend. The FastAPI adapter in `api/frontend_adapter.py` exposes the NVIDIA-compatible `/api/*` contract while the legacy ingest endpoints remain available.
 
-| Runtime config | Live value |
+| Runtime config | Checked-in value |
 | --- | --- |
-| `INGEST_API_URL` | `http://ingest-server.default.svc.cluster.local:8000` |
+| `INGEST_API_URL` | `http://ingest-server:8000` |
 | Public frontend host | `https://gradio.simona.local` |
 | Frontend upload endpoint | `/api/documents?blocking=false` |
 | Frontend task endpoint | `/api/status?task_id=<task_id>` |
 | Frontend collections endpoint | `/api/collections` |
 | Legacy upload endpoint | `/api/v1/ingest/file` |
+| Legacy case endpoint | `/api/v1/ingest/case` |
 | Legacy jobs endpoint | `/api/v1/ingest/jobs` |
 
 For selected files, the React frontend:
@@ -103,6 +111,8 @@ The frontend adapter and legacy jobs endpoints read the in-memory metrics store:
 | `GET /api/health` / `GET /api/configuration` | Return frontend health and configuration defaults |
 | `GET /api/v1/ingest/jobs` | List jobs, optionally filtered by `status` and `stage` |
 | `GET /api/v1/ingest/jobs/{job_id}` | Return one metrics record |
+| `GET /api/v1/ingest/jobs/{job_id}/output` | Return generated Markdown output from `/outputs` or shared ingest output |
+| `POST /api/v1/ingest/case` | Queue Markdown case content into the `case-rag` index |
 
 ## Worker And Parsing Stage
 
@@ -111,10 +121,11 @@ The FastAPI lifespan startup creates:
 - A multiprocessing-backed metrics store when available.
 - An `InboundWorker` thread.
 - A `ProcessPoolExecutor` with `max_workers=INGEST_WORKER_MAX_WORKERS`.
+- A `SharedFolderScanner` thread when `SHARED_INGEST_ENABLED=true`.
 
-Live worker settings:
+Checked-in worker settings:
 
-| Setting | Live value |
+| Setting | Checked-in value |
 | --- | --- |
 | `INGEST_WORKER_MAX_WORKERS` | `1` |
 | Process start method | `spawn` |
@@ -128,35 +139,37 @@ For each job, `job_runner`:
 
 1. Configures CUDA and torch matmul precision.
 2. Marks the job as running.
-3. Creates the parser through `ParserFactory`.
+3. Creates `DoclingParser`.
 4. Parses the document.
-5. Creates the chunker through `ChunkerFactory`.
+5. Creates `DoclingChunker`.
 6. Chunks the parsed document.
-7. Creates `ElasticsearchDispatch`.
-8. Bulk indexes chunks.
-9. Marks metrics done or failed.
-10. Writes a Markdown rendering of the parsed document to `/outputs`.
+7. Writes Markdown and chunk JSON outputs.
+8. Creates `ElasticsearchDispatch`.
+9. Bulk indexes chunks.
+10. Marks metrics done or failed.
+11. Updates shared ingest state when the source is `shared-folder`.
 
 Docling parser settings come from `ingest-server-config`.
 
-| Area | Live value |
+| Area | Checked-in value |
 | --- | --- |
 | Parser | `docling` |
 | OCR enabled | `true` |
 | OCR engine | `surya` |
 | OCR languages | `es,en` |
 | Surya inference URL | `http://surya-vllm:8000/v1` |
-| Layout batch size | `64` |
-| OCR batch size | `16` |
+| Layout batch size | `4` |
+| OCR batch size | `8` |
 | Table batch size | `8` |
 | Queue max size | `16` |
 | Full page OCR | `false` |
 | Code enrichment | `false` |
-| Picture description URL | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
+| Shared ingest root | `/datastore/shared-ingest` |
+| Picture description URL | `http://vllm-qwen35-9b:8007/v1/chat/completions` |
 
 The Docling parser:
 
-- Allows PDF, Markdown, and arbitrary JSON input. JSON is converted to Markdown before Docling conversion.
+- Allows PDF, Markdown, arbitrary JSON, DOCX, PPTX, XLSX, HTML, EML, and image input. JSON is converted to Markdown before Docling conversion. MSG is rejected because the installed Docling API exposes email support as EML.
 - Uses local artifacts from `/docling-models`.
 - Uses PPDocLayout model path from the mounted model volume.
 - Can select EasyOCR, MinerU, Surya OCR 2, RapidOCR, or Docling auto OCR through
@@ -167,6 +180,34 @@ The Docling parser:
 - Sends picture descriptions to the configured endpoint with model
   `DOCLING_PICTURE_DESCRIPTION_MODEL` (`Qwen3.5-9B` by default).
 - Produces a `ParsedDocument` containing `document_id`, `source_file_name`, source path, MIME type, title, page count, and the raw Docling document.
+
+## Shared Folder Ingest
+
+Shared folder ingest is implemented in `workers/shared_ingest.py` and is enabled
+by the checked-in k3s ConfigMap.
+
+Expected disk layout:
+
+```text
+/datastore/shared-ingest/
+  <collection-name>/
+    file.pdf
+    output/
+      .ingest-state.json
+      <job_id>/
+        <title> output.md
+        chunks/*.json
+```
+
+The scanner:
+
+- Ensures collection output folders exist for the configured index and any
+  discoverable `open-rag-*` Elasticsearch indices.
+- Ignores hidden files and partial download suffixes.
+- Waits `SHARED_INGEST_STABLE_SECONDS` before queuing a file.
+- Uses path, `mtime_ns`, and file size as the file identity.
+- Requeues a file when that identity changes.
+- Writes queue/done/failed state to `.ingest-state.json`.
 
 ## Chunking Stage
 
@@ -221,14 +262,14 @@ Indexing is implemented in `dispatcher/elastic/elastic.py`.
 
 The dispatcher connects to:
 
-| Config | Live value |
+| Config | Checked-in value |
 | --- | --- |
-| `ELASTIC_HOSTS` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
+| `ELASTIC_HOSTS` | `https://elasticsearch-gpu-indexer:9200` |
 | Index | `open-rag-embeddings-v4` |
 | Pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
 | Ingest inference ID | `text_embedding-octen-embedding-4b_ingest` |
 | Search inference ID | `text_embedding-octen-embedding-4b_search` |
-| Bulk batch size | `20` |
+| Bulk batch size | `10` |
 | Bulk timeout | `30m` |
 | Bulk request timeout | `1800s` |
 | Certificate verification | `false` |
@@ -241,19 +282,12 @@ The dispatcher connects to:
 - `refresh=wait_for`
 - `wait_for_active_shards=1`
 
-The live index is healthy and currently contains:
-
-| Metric | Value |
-| --- | --- |
-| Chunk documents | `3372` |
-| Distinct `document_id` values | `17` |
-| Language split | `en=2737`, `es=633`, `fr=2` |
-| Index shards/replicas | `1` primary, `1` replica |
-| Default pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
+Index document counts, shard state, and language splits are live cluster state
+and are intentionally not pinned in this source document.
 
 ## Ingest Pipeline Details
 
-The live ingest pipeline is `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
+The checked-in ingest pipeline name is `open_rag_embeddings_v4_multilingual_semantic_pipeline`.
 
 ```mermaid
 flowchart TD
@@ -284,16 +318,13 @@ The index mapping stores returned chunk text in `content` as indexed plain text.
 
 ## Kibana Agentic Chat Retrieval
 
-The live workflow is stored in Elasticsearch:
+The checked-in workflow artifact is `elastic_integration/rag-workflow.yml`.
+Production may store an imported copy in Elasticsearch/Kibana Agent Builder.
 
 | Field | Value |
 | --- | --- |
-| Index | `.workflows-workflows-000001` |
 | Workflow ID | `rag-query-retrieval-tool-v4-conversation-aware` |
 | Name | `RAG query retrieval tool v4 conversation aware` |
-| Enabled | `true` |
-| Created | `2026-06-08T21:53:58.328Z` |
-| Updated | `2026-06-09T11:20:11.273Z` |
 | Index constant | `open-rag-embeddings-v4` |
 | Result size | `10` |
 | Expansion size | `30` |
@@ -401,7 +432,7 @@ The agent instruction requires:
 
 | Stage | Caller | Target | Purpose |
 | --- | --- | --- | --- |
-| Picture description during parsing | Docling parser in `ingest-server` | LiteLLM `/v1/chat/completions` | Describe images in parsed PDFs |
+| Picture description during parsing | Docling parser in `ingest-server` | LiteLLM `/v1/chat/completions` | Describe images in parsed PDFs/images |
 | Picture description backend | LiteLLM | `vllm-qwen3-5-9b` or configured chat model | Generate descriptions |
 | Chunk embedding during indexing | Elasticsearch `semantic_text` inference | LiteLLM `/v1/embeddings` | Create semantic vectors |
 | Embedding backend | LiteLLM | `vllm-qwen3-embedding-4b` | Serve `Qwen3-Embedding-4B` |

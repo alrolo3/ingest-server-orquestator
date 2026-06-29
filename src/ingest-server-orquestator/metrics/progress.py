@@ -27,6 +27,8 @@ def _rate(count: object, seconds: object) -> float | None:
 
 
 class ProgressReporter:
+    """Small facade that records parser/chunker/dispatcher progress for one job."""
+
     def __init__(self, job_id: str, store: JobMetricsStore) -> None:
         self.job_id = job_id
         self.store = store
@@ -130,6 +132,8 @@ class ProgressReporter:
 
 
 class NullProgressReporter:
+    """No-op progress sink for call sites that need the reporter interface only."""
+
     @staticmethod
     def mark_stage(
         _stage: JobStage | str,

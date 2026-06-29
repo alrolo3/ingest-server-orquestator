@@ -47,3 +47,7 @@ For containers, build from this directory:
 docker build -t ingest-server-orquestator-frontend:latest .
 docker run --rm -p 3000:3000 -e INGEST_API_URL=http://host.docker.internal:8000 ingest-server-orquestator-frontend:latest
 ```
+
+## Tests
+
+See `TESTING.md` for Vitest commands and the shared React Testing Library setup.

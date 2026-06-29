@@ -8,6 +8,7 @@ from config.paths import (
     DOCLING_ARTIFACTS_PATH,
     DOCLING_MINERU_MODEL_PATH,
     DOCLING_PP_LAYOUT_MODEL_PATH,
+    SHARED_INGEST_DIR,
     TOKENIZER_PATH,
 )
 
@@ -57,6 +58,9 @@ _DOCLING_IMAGES_SCALE = 2.0
 _DOCLING_TABLE_MODE = "accurate"
 _DOCLING_CODE_ENRICHMENT_ENABLED = False
 _DOCLING_FORMULA_ENRICHMENT_ENABLED = False
+_SHARED_INGEST_ENABLED = True
+_SHARED_INGEST_SCAN_INTERVAL_SECONDS = 30
+_SHARED_INGEST_STABLE_SECONDS = 10
 _FALSE_VALUES = {"", "0", "false", "no", "off"}
 _DOCLING_TABLE_MODES = {"accurate", "fast"}
 
@@ -71,6 +75,8 @@ def _default_docling_ocr_langs() -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class ServerConfig:
+    """Immutable runtime contract shared by API, workers, parser, chunker, and Elasticsearch."""
+
     app_name: str
     environment: str
     inbound_queue_name: str
@@ -131,6 +137,10 @@ class ServerConfig:
         "http://vllm-qwen35-9b:8007/v1/chat/completions"
     )
     docling_picture_description_model: str = _DOCLING_PICTURE_DESCRIPTION_MODEL
+    shared_ingest_dir: Path = SHARED_INGEST_DIR
+    shared_ingest_enabled: bool = _SHARED_INGEST_ENABLED
+    shared_ingest_scan_interval_seconds: int = _SHARED_INGEST_SCAN_INTERVAL_SECONDS
+    shared_ingest_stable_seconds: int = _SHARED_INGEST_STABLE_SECONDS
 
 
 _SERVER_CONFIG: ServerConfig | None = None
@@ -378,6 +388,28 @@ def _load_server_config_from_env() -> ServerConfig:
                 _DOCLING_PICTURE_DESCRIPTION_MODEL,
             ).strip()
             or _DOCLING_PICTURE_DESCRIPTION_MODEL
+        ),
+        shared_ingest_dir=Path(
+            getenv("SHARED_INGEST_DIR", str(SHARED_INGEST_DIR)).strip()
+            or str(SHARED_INGEST_DIR)
+        ).expanduser(),
+        shared_ingest_enabled=_env_bool(
+            "SHARED_INGEST_ENABLED",
+            _SHARED_INGEST_ENABLED,
+        ),
+        shared_ingest_scan_interval_seconds=max(
+            1,
+            _env_int(
+                "SHARED_INGEST_SCAN_INTERVAL_SECONDS",
+                _SHARED_INGEST_SCAN_INTERVAL_SECONDS,
+            ),
+        ),
+        shared_ingest_stable_seconds=max(
+            0,
+            _env_int(
+                "SHARED_INGEST_STABLE_SECONDS",
+                _SHARED_INGEST_STABLE_SECONDS,
+            ),
         ),
     )
 

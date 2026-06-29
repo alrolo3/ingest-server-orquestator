@@ -80,6 +80,7 @@ class SuryaOcrModel(BaseOcrModel):
         conv_res: ConversionResult,
         page_batch: Iterable[Page],
     ) -> Iterable[Page]:
+        """Run Surya OCR on Docling OCR rectangles and attach TextCell results."""
         if not self.enabled:
             yield from page_batch
             return
@@ -135,6 +136,7 @@ class SuryaOcrModel(BaseOcrModel):
         scale: float,
         default_confidence: float,
     ) -> TextCell | None:
+        """Convert one Surya result block into Docling page coordinates."""
         if _truthy_block_value(block, "skipped") or _truthy_block_value(block, "error"):
             return None
 
@@ -313,6 +315,8 @@ def _block_confidence(block: Any, default_confidence: float) -> float:
 
 
 class _PlainTextHTMLParser(HTMLParser):
+    """Tiny HTML-to-text helper for Surya blocks that return table-like HTML."""
+
     _BLOCK_TAGS = {
         "article",
         "blockquote",

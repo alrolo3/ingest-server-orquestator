@@ -39,9 +39,11 @@ Relevant document fields may include:
 - `source_file_name`, `title`, and `clean_title`
 - `content`
 - `headings`
-- `page_start`, `page_end`, `page_number`, and `page_numbers`
-- `chunk_id`, `record_id`, `document_id`, and `elastic_id`
-- `content_kind` and `chunk_quality`
+- `page_number` and `page_numbers`
+- `chunk_id`, `document_id`, and `elastic_id`
+- `content_kind`
+- Legacy workflow fields can appear empty on older artifacts:
+  `page_start`, `page_end`, `record_id`, and `chunk_quality`
 
 ## Required Process
 
@@ -155,9 +157,9 @@ Bad `conversation_context` examples:
 
 Every final reference must include a page value. Choose the page value in this order:
 
-1. If `page_start` and `page_end` are present, use `page_start-page_end` when they differ, or the single page when they match.
-2. Else if `page_number` is present, use that page.
-3. Else if `page_numbers` contains values, use those values as a range or comma-separated pages.
+1. If `page_number` is present, use that page.
+2. Else if `page_numbers` contains values, use those values as a range or comma-separated pages.
+3. Else if legacy `page_start` and `page_end` are present, use `page_start-page_end` when they differ, or the single page when they match.
 4. Else use `page unknown`.
 
 Do not fabricate missing pages.

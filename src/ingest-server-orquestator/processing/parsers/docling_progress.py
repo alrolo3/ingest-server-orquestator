@@ -55,6 +55,7 @@ class ProgressReportingStandardPdfPipeline(StandardPdfPipeline):
     """Docling pipeline that reports page progress through the generic reporter."""
 
     def _make_ocr_model(self, art_path: Path | None) -> object:
+        """Select the configured OCR adapter before Docling builds the pipeline."""
         options = self.pipeline_options.ocr_options
         if isinstance(options, MinerUOcrOptions):
             return MinerU(
@@ -86,6 +87,7 @@ class ProgressReportingStandardPdfPipeline(StandardPdfPipeline):
         self,
         conv_res: std_pdf.ConversionResult,
     ) -> std_pdf.ConversionResult:
+        """Mirror Docling's threaded build loop while reporting each completed page."""
         self._page_sizes_by_no = {}
         run_id = next(self._run_seq)
         backend = _input_backend(conv_res)

@@ -33,13 +33,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from api.frontend_adapter import router as frontend_adapter_router
-from config.config import load_server_config
+from config.config import ServerConfig, load_server_config
 from config.paths import OUTPUT_DIR, UPLOAD_DIR
 from dispatcher.elastic.elastic import ElasticsearchDispatch
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
 from queues.queue_local import local_queue
 from workers.inbound_worker import InboundWorker
+from workers.shared_ingest import SharedFolderScanner
+from workers.shared_ingest import shared_output_markdown_for_job_id
 
 
 logging.basicConfig(
@@ -112,7 +114,28 @@ def _save_markdown_case(content: str, filename: str) -> tuple[Path, int]:
     return target_path, target_path.stat().st_size
 
 
-def _validated_output_path(job: dict[str, Any]) -> Path:
+def _server_config(request: Request) -> ServerConfig:
+    return getattr(request.app.state, "server_config", load_server_config())
+
+
+def _allowed_output_roots(server_config: ServerConfig) -> list[Path]:
+    roots = [OUTPUT_DIR.resolve()]
+    if server_config.shared_ingest_enabled:
+        roots.append(server_config.shared_ingest_dir.resolve())
+    return roots
+
+
+def _is_under_any_root(path: Path, roots: list[Path]) -> bool:
+    for root in roots:
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _validated_output_path(job: dict[str, Any], server_config: ServerConfig) -> Path:
     output_path = job.get("output_path")
     if not output_path:
         raise HTTPException(status_code=404, detail="Job output not found")
@@ -121,12 +144,10 @@ def _validated_output_path(job: dict[str, Any]) -> Path:
     if not path.is_absolute():
         path = OUTPUT_DIR / path
 
-    output_root = OUTPUT_DIR.resolve()
+    output_roots = _allowed_output_roots(server_config)
     resolved_path = path.resolve()
-    try:
-        resolved_path.relative_to(output_root)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail="Job output not found") from exc
+    if not _is_under_any_root(resolved_path, output_roots):
+        raise HTTPException(status_code=404, detail="Job output not found")
 
     if not resolved_path.is_file():
         raise HTTPException(status_code=404, detail="Job output not found")
@@ -134,7 +155,15 @@ def _validated_output_path(job: dict[str, Any]) -> Path:
     return resolved_path
 
 
-def _output_path_for_job_id(job_id: str) -> Path | None:
+def _output_path_for_job_id(
+    job_id: str,
+    server_config: ServerConfig,
+) -> Path | None:
+    if server_config.shared_ingest_enabled:
+        shared_path = shared_output_markdown_for_job_id(job_id, server_config)
+        if shared_path is not None:
+            return shared_path
+
     output_dir = (OUTPUT_DIR / job_id).resolve()
     output_root = OUTPUT_DIR.resolve()
     try:
@@ -201,8 +230,35 @@ async def lifespan(fastapi_app: FastAPI):
     fastapi_app.state.inbound_worker_thread = inbound_thread
     fastapi_app.state.inbound_worker = inbound_worker
 
+    shared_scan_stop_event = Event()
+    shared_scan_thread = None
+    shared_scanner = None
+    if fastapi_app.state.server_config.shared_ingest_enabled:
+        shared_scanner = SharedFolderScanner(
+            shared_scan_stop_event,
+            fastapi_app.state.metrics_store,
+            server_config=fastapi_app.state.server_config,
+        )
+        shared_scan_thread = Thread(
+            target=shared_scanner.run_forever,
+            name="shared-folder-scanner",
+            daemon=True,
+        )
+        shared_scan_thread.start()
+        LOGGER.info(
+            "Shared folder scanner thread started root=%s",
+            fastapi_app.state.server_config.shared_ingest_dir,
+        )
+
+    fastapi_app.state.shared_scan_stop_event = shared_scan_stop_event
+    fastapi_app.state.shared_scan_thread = shared_scan_thread
+    fastapi_app.state.shared_scanner = shared_scanner
+
     yield
 
+    shared_scan_stop_event.set()
+    if shared_scan_thread is not None:
+        shared_scan_thread.join(timeout=5)
     stop_event.set()
     inbound_thread.join(timeout=5)
     inbound_worker.shutdown()
@@ -369,14 +425,15 @@ async def ingest_job(request: Request, job_id: str):
 
 @app.get("/api/v1/ingest/jobs/{job_id}/output")
 async def ingest_job_output(request: Request, job_id: str):
+    server_config = _server_config(request)
     job = request.app.state.metrics_store.get(job_id)
     if job is None:
-        path = _output_path_for_job_id(job_id)
+        path = _output_path_for_job_id(job_id, server_config)
         if path is None:
             raise HTTPException(status_code=404, detail="Job output not found")
         filename = path.name
     else:
-        path = _validated_output_path(job)
+        path = _validated_output_path(job, server_config)
         filename = str(job.get("output_file_name") or path.name)
     return FileResponse(
         path=path,

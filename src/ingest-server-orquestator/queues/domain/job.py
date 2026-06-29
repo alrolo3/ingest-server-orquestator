@@ -8,6 +8,8 @@ from uuid import uuid4
 
 @dataclass(slots=True)
 class Job:
+    """Queue payload for one document ingest request."""
+
     job_id: str
     parser_type: str
     input_data: dict[str, Any]
@@ -26,6 +28,7 @@ class Job:
         chunker_type: str,
         settings: dict[str, Any] | None = None,
     ) -> "Job":
+        """Create a queued job with a fresh UUID and optional routing settings."""
         return cls(
             job_id=str(uuid4()),
             parser_type=parser_type,
@@ -35,6 +38,7 @@ class Job:
         )
 
     def to_queue_message(self) -> dict[str, Any]:
+        """Serialize the job into the dict shape exposed by queue/debug endpoints."""
         return {
             "job_id": self.job_id,
             "parser_type": self.parser_type,

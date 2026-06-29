@@ -19,7 +19,7 @@ Expected output:
 
 - `documents`: expanded grounding chunks. Use these as answer evidence.
 - `initial_rrf_documents`: first-stage RRF hits before expansion. Use only for diagnostics.
-- `standalone_question`, `query_en`, `query_es`: retrieval trace fields.
+- `standalone_question`: retrieval trace field.
 - `answer_language`: final answer language, usually `en` or `es`.
 - `instruction`: workflow grounding instructions.
 
@@ -108,9 +108,9 @@ refund policy exceptions deadline waiver exclusions reimbursement
 
 Every final reference must include a page value. Choose the page value in this order:
 
-1. If `page_start` and `page_end` are present, use `page_start-page_end` when they differ, or the single page when they match.
-2. Else if `page_number` is present, use that page.
-3. Else if `page_numbers` contains values, use those values as the page range or comma-separated pages.
+1. If `page_number` is present, use that page.
+2. Else if `page_numbers` contains values, use those values as the page range or comma-separated pages.
+3. Else if legacy `page_start` and `page_end` are present, use `page_start-page_end` when they differ, or the single page when they match.
 4. Else use `page unknown`.
 
 ## Response Contract

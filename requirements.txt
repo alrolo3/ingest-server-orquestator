@@ -1,7 +1,7 @@
 -c constraints.txt
 accelerate==1.13.0
-docling==2.96.1
-docling-core==2.78.0
+docling==2.107.0
+docling-core==2.85.0
 docling-pp-doc-layout==0.2.2
 easyocr==1.7.2
 elasticsearch==9.4.1

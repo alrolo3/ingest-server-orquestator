@@ -26,6 +26,9 @@ All notable changes to this project should be documented in this file.
 
 ### Changed
 
+- Updated project documentation to remove obsolete workflow/README files,
+  document shared-folder ingest, and point Hugging Face model download commands
+  at the current `hf` CLI.
 - Application fallback OCR engine is offline EasyOCR with Spanish and English
   languages when no deployment override is provided.
 - Default EasyOCR runs on CPU to keep VRAM available for layout and VLM stages.

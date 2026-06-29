@@ -21,9 +21,8 @@ The indexed `DocumentChunk` keeps user-visible text in `_source.content`. This i
 
 Generated retrieval fields are derived from `content`:
 
-- `content_dense`: dense `semantic_text` search field using endpoint `openai-text_embedding-qwen3-embedding-4b`; excluded from `_source`.
+- `content_dense`: dense `semantic_text` search field using endpoint `text_embedding-octen-embedding-4b_ingest`; excluded from `_source`.
 - `content_sparse`: sparse `semantic_text` search field using endpoint `naver-splade-v3`; excluded from `_source`.
-- `content_lex.en`, `content_lex.es`, `content_lex.fr`: language-routed lexical fields for BM25-style retrieval; excluded from `_source`.
 - `clean_title`: sanitized title used for sparse title retrieval and returned in `_source`.
 - `headings`: Docling heading hierarchy used for sparse heading retrieval and returned in `_source`.
 
@@ -40,7 +39,7 @@ The current Docling chunker:
 - Uses contextualized chunk text where available.
 - Splits oversized contextualized chunks into token windows with `100` token overlap.
 - Coalesces adjacent chunks below `128` tokenizer tokens when the merged chunk still fits under the `512` token cap.
-- Keeps page provenance in `page_number`, `page_numbers`, `page_start`, and `page_end`.
+- Keeps page provenance in `page_number` and `page_numbers`.
 
 Some short chunks can remain when they cannot be safely merged without crossing document item, page, or token-budget boundaries.
 
@@ -52,8 +51,6 @@ The ingest pipeline normalizes chunk metadata before semantic indexing:
 - Normalize `clean_title` and `headings`.
 - Populate `content_dense` and `content_sparse` from `content`.
 - Set `content_length`, `searchable=true`, `boilerplate=false`, and `content_kind=chunk`.
-- Run `lang_ident_model_1` over `content`.
-- Route lexical text into `content_lex.es`, `content_lex.en`, or `content_lex.fr`; default to English for unsupported or low-confidence language detection.
 - Keep returned evidence fields in `_source`: `content`, `title`, `clean_title`, `headings`, `source_file_name`, page fields, chunk IDs, and document IDs.
 
 Automatic Elasticsearch semantic chunking is disabled because the application pre-chunks documents before indexing.
@@ -69,8 +66,6 @@ The rewrite step must produce:
 
 - `question_original`: exact current user question.
 - `standalone_question`: self-contained retrieval query.
-- `query_en`: English lexical/search variant.
-- `query_es`: Spanish lexical/search variant.
 - `answer_language`: `en` or `es`, usually matching the current user question.
 
 The rewrite step must not answer the question, introduce unsupported assumptions, or drop exact identifiers from the current question or conversation context.
@@ -87,16 +82,13 @@ Branches include:
 
 | Branch | Query text | Fields |
 | --- | --- | --- |
-| Standalone lexical | `standalone_question` | `content_lex.*`, `title`, `source_file_name.text` |
-| Original lexical | `question_original` | `content_lex.*`, `title`, `source_file_name.text` |
-| English lexical | `query_en` | `content_lex.en`, `title`, `source_file_name.text` |
-| Spanish lexical | `query_es` | `content_lex.es`, `title`, `source_file_name.text` |
 | Dense content semantic | `standalone_question` | `content_dense` |
 | Sparse content semantic | `standalone_question` | `content_sparse` |
-| Sparse title semantic | all rewrite variants | `clean_title` |
-| Sparse heading semantic | all rewrite variants | `headings` |
+| Sparse title semantic | `standalone_question` | `clean_title` |
+| Sparse heading semantic | `standalone_question` | `headings` |
 
-Language variants improve recall; they must not be used as hard document-language filters.
+The workflow is semantic-only; do not reintroduce BM25, lexical `content_lex.*`,
+or translated query branches unless the index contract is changed first.
 
 ## Context Expansion
 
@@ -105,7 +97,8 @@ After first-stage retrieval, the workflow expands context around the seed hits:
 - Keep first-stage seed hits.
 - Search the same `document_id`.
 - Include chunks on the same page, previous page, and next page.
-- Use `page_number`, `page_numbers`, `page_start`, and `page_end` when available.
+- Use `page_number` and `page_numbers` when available. Legacy `page_start` and
+  `page_end` can be read only as fallback on older indexed documents.
 - Return expanded hits as `documents`.
 - Return first-stage mapped hits as `initial_rrf_documents` for diagnostics only.
 
@@ -156,7 +149,7 @@ Critical keywords include exact filenames, IDs, model names, acronyms, page hint
 Every answer must finish with references. Each reference should include, in order:
 
 1. `source_file_name` or filename unknown.
-2. Page value from `page_start`/`page_end`, else `page_number`, else `page_numbers`, else page unknown.
+2. Page value from `page_number`, else `page_numbers`, else legacy `page_start`/`page_end`, else page unknown.
 3. `chunk_id` or ID unknown.
 4. `headings` or a short grounded context phrase.
 

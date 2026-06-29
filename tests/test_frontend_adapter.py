@@ -21,11 +21,16 @@ from api.frontend_adapter import frontend_documents
 from api.frontend_adapter import frontend_generate
 from api.frontend_adapter import frontend_task_status
 from api.frontend_adapter import frontend_upload_documents
+from api.frontend_adapter import frontend_upload_markdown_document
 from config.config import ServerConfig
 from metrics.store import JobMetricsStore
 
 
-def _server_config() -> ServerConfig:
+def _server_config(
+    *,
+    shared_ingest_dir: Path = Path("/tmp/shared-ingest"),
+    shared_ingest_enabled: bool = False,
+) -> ServerConfig:
     return ServerConfig(
         app_name="test",
         environment="test",
@@ -38,17 +43,25 @@ def _server_config() -> ServerConfig:
         elastic_index_name="open-rag-embeddings-v4",
         elastic_hosts=["http://elastic:9200"],
         elastic_inference_id="qwen3-embedding-4b",
+        shared_ingest_dir=shared_ingest_dir,
+        shared_ingest_enabled=shared_ingest_enabled,
     )
 
 
 def _request(
     store: JobMetricsStore | None = None,
     elasticsearch_client: object | None = None,
+    *,
+    shared_ingest_dir: Path = Path("/tmp/shared-ingest"),
+    shared_ingest_enabled: bool = False,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         app=SimpleNamespace(
             state=SimpleNamespace(
-                server_config=_server_config(),
+                server_config=_server_config(
+                    shared_ingest_dir=shared_ingest_dir,
+                    shared_ingest_enabled=shared_ingest_enabled,
+                ),
                 metrics_store=store or JobMetricsStore(),
                 frontend_collections={},
                 frontend_deleted_collections=set(),
@@ -166,6 +179,26 @@ class FrontendAdapterTest(unittest.TestCase):
         self.assertEqual("open-rag-embeddings-v4", collection["collection_name"])
         self.assertEqual("Active", collection["collection_info"]["status"])
         self.assertEqual("source", collection["metadata_schema"][0]["name"])
+
+    def test_collections_include_shared_ingest_folders(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            shared_root = Path(temp_dir)
+            (shared_root / "manuals").mkdir()
+            (shared_root / "manuals" / "output").mkdir()
+            (shared_root / "output").mkdir()
+            (shared_root / ".hidden").mkdir()
+            request = _request(
+                shared_ingest_dir=shared_root,
+                shared_ingest_enabled=True,
+            )
+
+            response = asyncio.run(frontend_collections(request))
+
+        names = [collection["collection_name"] for collection in response["collections"]]
+        self.assertIn("open-rag-embeddings-v4", names)
+        self.assertIn("open-rag-manuals", names)
+        self.assertNotIn("open-rag-output", names)
+        self.assertNotIn("open-rag-hidden", names)
 
     def test_create_collection_creates_physical_open_rag_index(self) -> None:
         elasticsearch = FakeElasticsearch([])
@@ -299,6 +332,44 @@ class FrontendAdapterTest(unittest.TestCase):
         first_document = documents_response["documents"][0]
         self.assertEqual("one.md", first_document["document_name"])
         self.assertEqual("ops", first_document["metadata"]["department"])
+
+    def test_upload_markdown_document_builds_file_and_queues_job(self) -> None:
+        store = JobMetricsStore()
+        request = _request(store)
+
+        with TemporaryDirectory() as temp_dir:
+            with (
+                patch("api.frontend_adapter.UPLOAD_DIR", Path(temp_dir)),
+                patch("api.frontend_adapter.local_queue.put") as put_item,
+            ):
+                upload_response = asyncio.run(
+                    frontend_upload_markdown_document(
+                        request,
+                        {
+                            "collection_name": "workflow notes",
+                            "filename": "workflow-result",
+                            "markdown": "# Workflow Result\n\nIndexed text.",
+                            "metadata": {"case_id": "case-1"},
+                        },
+                        blocking=False,
+                    )
+                )
+                saved_path = next(Path(temp_dir).glob("*-workflow-result.md"))
+                self.assertEqual(
+                    "# Workflow Result\n\nIndexed text.",
+                    saved_path.read_text(encoding="utf-8"),
+                )
+
+        self.assertEqual("open-rag-workflow-notes", upload_response["collection_name"])
+        self.assertEqual(1, upload_response["total_documents"])
+        self.assertEqual(1, put_item.call_count)
+
+        job = put_item.call_args.args[0]
+        self.assertEqual("elastic-workflow", job.input_data["source"])
+        self.assertEqual("workflow-result.md", job.input_data["file_name"])
+        self.assertEqual("text/markdown", job.input_data["mime_type"])
+        self.assertEqual("open-rag-workflow-notes", job.input_data["collection_name"])
+        self.assertEqual({"case_id": "case-1"}, job.input_data["document_metadata"])
 
     def test_documents_recover_from_elasticsearch_when_metrics_are_empty(self) -> None:
         elasticsearch = FakeElasticsearch([_elastic_document_bucket()])

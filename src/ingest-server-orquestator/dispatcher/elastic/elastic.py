@@ -379,7 +379,7 @@ def build_open_rag_mappings(
 
 
 class ElasticsearchDispatch(BaseModel):
-    """Dispatcher skeleton backed by the Elasticsearch Python client."""
+    """Own Elasticsearch pipeline/index setup and bulk indexing for DocumentChunk records."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -440,6 +440,7 @@ class ElasticsearchDispatch(BaseModel):
         return Elasticsearch(**client_options, api_key=self.api_key)
 
     def close(self) -> None:
+        """Close the underlying Elasticsearch client when it supports close()."""
         close = getattr(self._client, "close", None)
         if callable(close):
             close()
@@ -473,6 +474,7 @@ class ElasticsearchDispatch(BaseModel):
         )
 
     def dispatch_chunks(self, chunks: list[DocumentChunk]) -> None:
+        """Bulk index chunks in batches and retry transient item-level failures."""
         if not chunks:
             return
 

@@ -19,6 +19,8 @@ LOGGER = logging.getLogger("ingest-server-orquestator.worker")
 
 
 class InboundWorker:
+    """Background consumer that submits queued ingest jobs to isolated child processes."""
+
     def __init__(
         self,
         stop_event: Event,
@@ -53,10 +55,12 @@ class InboundWorker:
             LOGGER.exception("Job failed job_id=%s", job.job_id)
 
     def shutdown(self) -> None:
+        """Stop accepting work and cancel queued process-pool futures."""
         LOGGER.info("Inbound worker shutting down")
         self.process_pool.shutdown(wait=False, cancel_futures=True)
 
     def run_forever(self) -> None:
+        """Drain the local queue until stop_event is set, respecting worker concurrency."""
         LOGGER.info("Inbound worker loop started")
         while not self.stop_event.is_set():
             if not self.executor_slots.acquire(timeout=0.5):

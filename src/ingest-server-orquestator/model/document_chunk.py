@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 
 
 class DocumentChunk(BaseModel):
+    """Single pre-chunked RAG record indexed into Elasticsearch."""
+
     content: str
     content_dense: str | None = None
     content_sparse: str

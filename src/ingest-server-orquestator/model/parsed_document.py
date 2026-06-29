@@ -6,6 +6,8 @@ from model.base_document import AbstractOutputDocument
 
 
 class ParsedDocument(BaseModel):
+    """Normalized parser result passed from parser to chunker and output writer."""
+
     document_id: str
     source_file_name: str
     source_path: str
@@ -23,5 +25,5 @@ class ParsedDocument(BaseModel):
     original_out_doc: AbstractOutputDocument
 
     def get_markdown(self) -> str:
-        """Return the normalized output as Markdown string.SOLO DOCLING"""
+        """Export the parser-native document to Markdown."""
         return self.original_out_doc.raw.export_to_markdown()

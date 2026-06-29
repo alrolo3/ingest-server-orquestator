@@ -19,8 +19,8 @@ Treat `elastic_integration/rag-workflow.yml` as the current v4 workflow template
 
 1. Identify the target artifact: agent instructions, workflow YAML, operational docs, or an answer explaining RAG behavior.
 2. Preserve the grounding contract: answers must use returned `documents` as evidence, not outside knowledge, and must cite source filename, page, chunk, and heading/context.
-3. Preserve the index contract: user-visible evidence text belongs in `_source.content`; generated `content_dense`, `content_sparse`, and `content_lex.*` fields exist for retrieval and may be excluded from `_source`.
-4. Preserve the workflow contract: first-stage retrieval uses conversation-aware rewrite, English and Spanish query variants, multilingual lexical branches, dense and sparse semantic branches, sparse title and heading branches, RRF, then same-page and neighboring-page expansion.
+3. Preserve the index contract: user-visible evidence text belongs in `_source.content`; generated `content_dense` and `content_sparse` fields exist for retrieval and may be excluded from `_source`.
+4. Preserve the workflow contract: first-stage retrieval uses conversation-aware rewrite, dense and sparse semantic branches, sparse title and heading branches, RRF, then same-page and neighboring-page expansion.
 5. Add or maintain an explicit evidence gate after retrieval. The agent must inspect whether returned chunks actually answer the question before synthesizing.
 6. Add or maintain retrieval retry behavior. When first retrieval is empty, irrelevant, or misses a named document/topic, the agent should call the retrieval tool again with a reformulated question that keeps all critical keywords unchanged.
 7. Keep final answers concise and grounded. Do not expose hidden reasoning, search diagnostics, or internal retry details unless the user asks for troubleshooting.
@@ -71,9 +71,9 @@ When editing `rag-workflow.yml`, ensure it keeps:
 - Index `open-rag-embeddings-v4`.
 - Filters `record_type: chunk`, `searchable: true`, and `boilerplate: false`.
 - Returned `_source.content` for visible grounding text.
-- `question_original`, `standalone_question`, `query_en`, `query_es`, and `answer_language` from the rewrite step.
-- RRF over multilingual lexical, dense `content_dense`, sparse `content_sparse`, sparse `clean_title`, and sparse `headings` branches.
-- Page expansion by `document_id` plus `page_number`, `page_numbers`, `page_start`, and `page_end`.
+- `question_original`, `standalone_question`, and `answer_language` from the rewrite step.
+- RRF over dense `content_dense`, sparse `content_sparse`, sparse `clean_title`, and sparse `headings` branches.
+- Page expansion by `document_id` plus `page_number` and `page_numbers`, with legacy `page_start`/`page_end` only as fallback when present.
 - Final output fields `documents`, `initial_rrf_documents`, `retrieval_strategy`, and `instruction`.
 
 ## References

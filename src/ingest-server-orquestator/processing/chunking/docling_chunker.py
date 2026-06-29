@@ -165,7 +165,7 @@ class MarkdownChunkingSerializerProvider(ChunkingSerializerProvider):
 
 
 class DoclingChunker(BaseModel):
-    """Chunker implementation backed by Docling."""
+    """Build Elasticsearch-ready DocumentChunk records from a ParsedDocument."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -229,6 +229,7 @@ class DoclingChunker(BaseModel):
         doc: ParsedDocument,
         progress: ProgressReporter,
     ) -> list[DocumentChunk]:
+        """Create chunks, merge short neighbors when safe, and update progress."""
         chunks = self._coalesce_short_chunks(self._docling_chunks(doc))
         progress.chunks_created(len(chunks))
         return chunks

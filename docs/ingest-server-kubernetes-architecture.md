@@ -2,11 +2,16 @@
 
 Snapshot date: 2026-06-09.
 
-This document describes the live Kubernetes architecture for the `ingest-server-orquestator` stack. It is based on the current cluster context `default`, Kubernetes resources, ECK/Elasticsearch API state, and the application source in this repository. Secret values were not copied into this document.
+This document is a cluster architecture snapshot for the
+`ingest-server-orquestator` stack. Treat concrete pod counts, versions, IPs,
+document counts, and health values as examples that can drift. For maintained
+deployment defaults, use `k8s/ingest-server.yaml`, `k8s/surya-vllm.yaml`, and
+`docs/k3s-airgapped-deployment.md`. Secret values were not copied into this
+document.
 
 ## Cluster Summary
 
-| Area | Live value |
+| Area | Snapshot value |
 | --- | --- |
 | Kubernetes distribution | k3s `v1.35.5+k3s1` |
 | Node | `servergpu` |
@@ -163,28 +168,31 @@ The React app is based on the NVIDIA RAG Blueprint frontend. Traefik keeps the e
 | Public ingress | None, called internally by the React frontend |
 | Upload path | `/uploads` from `ingest-data-pvc` |
 | Markdown output path | `/outputs` from `ingest-data-pvc` |
+| Shared ingest path | `/datastore/shared-ingest` from hostPath `DirectoryOrCreate` |
 | Tokenizer path | `/tokenizer`, read-only from `models-llm-pvc` |
 | Docling model path | `/docling-models`, read-only from `models-llm-pvc` |
 
 Live ConfigMap values include:
 
-| Config key | Live value |
+| Config key | Snapshot value |
 | --- | --- |
 | `APP_ENV` | `prod` |
 | `INGEST_WORKER_MAX_WORKERS` | `1` |
+| `SHARED_INGEST_DIR` | `/datastore/shared-ingest` |
+| `SHARED_INGEST_ENABLED` | `true` |
 | `NVIDIA_VISIBLE_DEVICES` | `4` |
 | `DOCLING_OCR_ENGINE` | `surya` |
 | `DOCLING_OCR_LANGS` | `es,en` |
 | `DOCLING_CODE_ENRICHMENT_ENABLED` | `false` |
 | `DOCLING_SURYA_INFERENCE_URL` | `http://surya-vllm:8000/v1` |
-| `DOCLING_PICTURE_DESCRIPTION_URL` | `http://inference-service.default.svc.cluster.local:4000/v1/chat/completions` |
+| `DOCLING_PICTURE_DESCRIPTION_URL` | `http://vllm-qwen35-9b:8007/v1/chat/completions` |
 | `DOCLING_PICTURE_DESCRIPTION_MODEL` | `Qwen3.5-9B` |
-| `ELASTIC_HOSTS` / `ELASTIC_URL` | `https://quickstart-es-http.default.svc.cluster.local:9200` |
+| `ELASTIC_HOSTS` / `ELASTIC_URL` | `https://elasticsearch-gpu-indexer:9200` |
 | `ELASTIC_INDEX_NAME` | `open-rag-embeddings-v4` |
 | `ELASTIC_PIPELINE_NAME` | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
 | `ELASTIC_INFERENCE_ID` | `text_embedding-octen-embedding-4b_ingest` |
 | `ELASTIC_SEARCH_INFERENCE_ID` | `text_embedding-octen-embedding-4b_search` |
-| `ELASTIC_BULK_BATCH_SIZE` | `20` |
+| `ELASTIC_BULK_BATCH_SIZE` | `10` |
 | `ELASTIC_VERIFY_CERTS` | `false` |
 
 Secret values are provided from `Secret/default/ingest-server-secrets`. The live Deployment references that Secret through `envFrom`, but the secret data is intentionally not documented here.
@@ -258,7 +266,7 @@ Elasticsearch API state:
 | Active shard percent | `100%` |
 | RAG index | `open-rag-embeddings-v4` |
 | RAG index default pipeline | `open_rag_embeddings_v4_multilingual_semantic_pipeline` |
-| RAG index documents | `3372` chunks from `17` document IDs |
+| RAG index documents | Live count; query Elasticsearch for current value |
 
 ### Kibana
 

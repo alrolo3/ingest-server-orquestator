@@ -10,7 +10,16 @@ sys.path.insert(0, str(SRC_DIR))
 
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import EasyOcrOptions, TableFormerMode
-from docling.document_converter import MarkdownFormatOption, SimplePipeline
+from docling.document_converter import (
+    EmailFormatOption,
+    ExcelFormatOption,
+    HTMLFormatOption,
+    ImageFormatOption,
+    MarkdownFormatOption,
+    PowerpointFormatOption,
+    SimplePipeline,
+    WordFormatOption,
+)
 from docling_core.types.doc.document import DoclingDocument, TitleItem
 
 from config.config import ServerConfig
@@ -53,9 +62,48 @@ class DoclingParserTest(unittest.TestCase):
             _docling_input_format(Path("uploaded.json"), "application/octet-stream"),
         )
 
+    def test_input_format_detects_supported_docling_formats(self) -> None:
+        cases = [
+            ("uploaded.docx", "application/octet-stream", InputFormat.DOCX),
+            (
+                "uploaded",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                InputFormat.DOCX,
+            ),
+            ("uploaded.pptx", "application/octet-stream", InputFormat.PPTX),
+            (
+                "uploaded",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                InputFormat.PPTX,
+            ),
+            ("uploaded.xlsx", "application/octet-stream", InputFormat.XLSX),
+            (
+                "uploaded",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                InputFormat.XLSX,
+            ),
+            ("uploaded.html", "application/octet-stream", InputFormat.HTML),
+            ("uploaded", "text/html", InputFormat.HTML),
+            ("uploaded.eml", "application/octet-stream", InputFormat.EMAIL),
+            ("uploaded", "message/rfc822", InputFormat.EMAIL),
+            ("uploaded.png", "application/octet-stream", InputFormat.IMAGE),
+            ("uploaded", "image/jpeg", InputFormat.IMAGE),
+        ]
+
+        for filename, mime_type, expected_format in cases:
+            with self.subTest(filename=filename, mime_type=mime_type):
+                self.assertEqual(
+                    expected_format,
+                    _docling_input_format(Path(filename), mime_type),
+                )
+
     def test_input_format_rejects_unsupported_files(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unsupported document format"):
             _docling_input_format(Path("uploaded.txt"), "text/plain")
+
+    def test_input_format_rejects_msg_files(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"\.msg files are not supported"):
+            _docling_input_format(Path("uploaded.msg"), "application/vnd.ms-outlook")
 
     def test_document_title_uses_docling_title_item(self) -> None:
         doc = DoclingDocument(name="fallback")
@@ -219,7 +267,19 @@ class DoclingParserTest(unittest.TestCase):
         format_options = document_converter.call_args.kwargs["format_options"]
         markdown_options = format_options[InputFormat.MD]
 
-        self.assertEqual([InputFormat.PDF, InputFormat.MD], allowed_formats)
+        self.assertEqual(
+            [
+                InputFormat.PDF,
+                InputFormat.MD,
+                InputFormat.DOCX,
+                InputFormat.PPTX,
+                InputFormat.XLSX,
+                InputFormat.HTML,
+                InputFormat.EMAIL,
+                InputFormat.IMAGE,
+            ],
+            allowed_formats,
+        )
         self.assertIsInstance(markdown_options, MarkdownFormatOption)
         self.assertIs(SimplePipeline, markdown_options.pipeline_cls)
         self.assertIsNone(markdown_options.pipeline_options.artifacts_path)
@@ -228,11 +288,67 @@ class DoclingParserTest(unittest.TestCase):
         self.assertFalse(markdown_options.backend_options.enable_remote_fetch)
         self.assertFalse(markdown_options.backend_options.enable_local_fetch)
         self.assertFalse(markdown_options.backend_options.fetch_images)
+        self.assertIsInstance(format_options[InputFormat.DOCX], WordFormatOption)
+        self.assertIsInstance(format_options[InputFormat.PPTX], PowerpointFormatOption)
+        self.assertIsInstance(format_options[InputFormat.XLSX], ExcelFormatOption)
+        self.assertIsInstance(format_options[InputFormat.HTML], HTMLFormatOption)
+        self.assertIsInstance(format_options[InputFormat.EMAIL], EmailFormatOption)
+        self.assertIsInstance(format_options[InputFormat.IMAGE], ImageFormatOption)
+        self.assertFalse(format_options[InputFormat.HTML].backend_options.enable_remote_fetch)
+        self.assertFalse(format_options[InputFormat.HTML].backend_options.enable_local_fetch)
+        self.assertFalse(format_options[InputFormat.HTML].backend_options.fetch_images)
         converter.convert.assert_called_once_with(source_path)
         self.assertEqual("uploaded.md", parsed_document.source_file_name)
         self.assertEqual(str(source_path), parsed_document.source_path)
         self.assertEqual("text/markdown", parsed_document.mime_type)
         self.assertEqual("fallback", parsed_document.title)
+
+    def test_parse_supports_docx_files(self) -> None:
+        doc = DoclingDocument(name="fallback")
+        converter = MagicMock()
+        converter.convert.return_value = SimpleNamespace(document=doc)
+
+        with patch(
+            "processing.parsers.docling_parser.DocumentConverter",
+            return_value=converter,
+        ):
+            parser = DoclingParser(
+                type="docling",
+                server_config=ServerConfig(
+                    app_name="test",
+                    environment="test",
+                    inbound_queue_name="inbound",
+                    worker_max_workers=1,
+                    chunk_max_tokens=2048,
+                    tokenizer_path=Path("/tmp/tokenizer"),
+                    docling_artifacts_path=Path("/tmp/docling-artifacts"),
+                    docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+                ),
+            )
+            with TemporaryDirectory() as temp_dir:
+                source_path = Path(temp_dir) / "uploaded.docx"
+                source_path.write_bytes(b"docx")
+                job = Job(
+                    job_id="job-1",
+                    parser_type="docling",
+                    input_data={
+                        "file_path": str(source_path),
+                        "file_name": "uploaded.docx",
+                    },
+                    chunker_type="docling",
+                )
+
+                parsed_document = parser.parse(job, NullProgressReporter())
+
+        converter.convert.assert_called_once_with(source_path)
+        self.assertEqual(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            parsed_document.mime_type,
+        )
+        self.assertEqual(
+            {"docling": {"parser": "docling", "input_format": "docx"}},
+            parsed_document.metadata,
+        )
 
     def test_parse_preprocesses_arbitrary_json_as_markdown(self) -> None:
         doc = DoclingDocument(name="uploaded")
@@ -276,7 +392,19 @@ class DoclingParserTest(unittest.TestCase):
                 parsed_document = parser.parse(job, NullProgressReporter())
 
         allowed_formats = document_converter.call_args.kwargs["allowed_formats"]
-        self.assertEqual([InputFormat.PDF, InputFormat.MD], allowed_formats)
+        self.assertEqual(
+            [
+                InputFormat.PDF,
+                InputFormat.MD,
+                InputFormat.DOCX,
+                InputFormat.PPTX,
+                InputFormat.XLSX,
+                InputFormat.HTML,
+                InputFormat.EMAIL,
+                InputFormat.IMAGE,
+            ],
+            allowed_formats,
+        )
         converter.convert.assert_not_called()
         converter.convert_string.assert_called_once()
         markdown, = converter.convert_string.call_args.args

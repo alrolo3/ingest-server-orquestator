@@ -7,6 +7,8 @@ from typing import Any
 
 
 class JobStage(StrEnum):
+    """Fine-grained lifecycle stage used for progress reporting."""
+
     QUEUED = "queued"
     RUNNING = "running"
     PARSING = "parsing"
@@ -18,6 +20,8 @@ class JobStage(StrEnum):
 
 
 class JobStatus(StrEnum):
+    """Coarse job state exposed to API callers and frontend consumers."""
+
     QUEUED = "queued"
     RUNNING = "running"
     DONE = "done"
@@ -41,6 +45,8 @@ def stage_status(stage: JobStage | str) -> JobStatus:
 
 @dataclass(frozen=True, slots=True)
 class JobMetrics:
+    """Snapshot of ingest progress, timings, output paths, and failure state."""
+
     job_id: str
     file_name: str
     source: str
@@ -73,6 +79,7 @@ class JobMetrics:
     finished_at: str | None
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a mutable API/storage representation of the metrics snapshot."""
         return asdict(self)
 
     @classmethod
@@ -86,6 +93,7 @@ class JobMetrics:
         parser_type: str,
         chunker_type: str,
     ) -> "JobMetrics":
+        """Build the initial metrics record when a job enters the queue."""
         now = utc_now()
         return cls(
             job_id=job_id,

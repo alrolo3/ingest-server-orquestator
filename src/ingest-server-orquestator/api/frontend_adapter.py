@@ -28,6 +28,8 @@ from dispatcher.elastic.elastic import ElasticsearchDispatch
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
 from queues.queue_local import local_queue
+from workers.shared_ingest import shared_collection_names
+from workers.shared_ingest import shared_output_markdown_for_job_id
 
 
 router = APIRouter()
@@ -74,6 +76,15 @@ _ELASTIC_DOCUMENT_SOURCE_FIELDS = [
 _OPEN_RAG_PREFIX = "open-rag-"
 _CASE_INDEX_NAME = "case-rag"
 _SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
+_MARKDOWN_RESERVED_FIELDS = {
+    "markdown",
+    "content",
+    "filename",
+    "file_name",
+    "collection_name",
+    "document_metadata",
+    "metadata",
+}
 
 
 def _server_config(request: Request) -> ServerConfig:
@@ -149,6 +160,13 @@ def _save_upload(file: UploadFile, filename: str) -> tuple[Path, int]:
     return target_path, target_path.stat().st_size
 
 
+def _save_markdown_text(content: str, filename: str) -> tuple[Path, int]:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    target_path = UPLOAD_DIR / f"{uuid4().hex}-{filename}"
+    target_path.write_text(content, encoding="utf-8")
+    return target_path, target_path.stat().st_size
+
+
 def _parse_upload_data(data: str) -> dict[str, Any]:
     if not data.strip():
         return {}
@@ -174,6 +192,42 @@ def _metadata_for_file(payload: dict[str, Any], filename: str) -> dict[str, Any]
         if isinstance(value, dict):
             return dict(value)
     return {}
+
+
+def _markdown_content(payload: dict[str, Any]) -> str:
+    content = payload.get("markdown")
+    if content is None:
+        content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="markdown must be a non-empty string",
+        )
+    return content
+
+
+def _markdown_filename(payload: dict[str, Any]) -> str:
+    filename = _safe_filename(
+        str(payload.get("filename") or payload.get("file_name") or "document")
+    )
+    if Path(filename).suffix.lower() not in {".md", ".markdown"}:
+        filename = f"{filename}.md"
+    return filename
+
+
+def _metadata_for_markdown(payload: dict[str, Any]) -> dict[str, Any]:
+    for key in ("document_metadata", "metadata"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise HTTPException(status_code=400, detail=f"{key} must be an object")
+        return dict(value)
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in _MARKDOWN_RESERVED_FIELDS
+    }
 
 
 def _canonical_collection_name(value: object, config: ServerConfig) -> str:
@@ -561,6 +615,8 @@ def _collections(request: Request) -> list[dict[str, Any]]:
     jobs = _visible_jobs_for_request(request)
     names = {_default_collection_name(config)}
     names.update(catalogs)
+    if config.shared_ingest_enabled:
+        names.update(shared_collection_names(config))
     names.update(
         _canonical_collection_name(name, config)
         for name in stored
@@ -636,7 +692,15 @@ def _document_item(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _output_path_for_document_id(document_id: str) -> Path | None:
+def _output_path_for_document_id(
+    document_id: str,
+    config: ServerConfig,
+) -> Path | None:
+    if config.shared_ingest_enabled:
+        shared_path = shared_output_markdown_for_job_id(document_id, config)
+        if shared_path is not None:
+            return shared_path
+
     output_dir = (OUTPUT_DIR / document_id).resolve()
     output_root = OUTPUT_DIR.resolve()
     try:
@@ -726,7 +790,10 @@ async def frontend_health(
                 "latency_ms": 0,
                 "error": None,
                 "buckets": 2,
-                "message": f"uploads={UPLOAD_DIR} outputs={OUTPUT_DIR}",
+                "message": (
+                    f"uploads={UPLOAD_DIR} outputs={OUTPUT_DIR} "
+                    f"shared_ingest={config.shared_ingest_dir}"
+                ),
             }
         ],
         "nim": [
@@ -980,6 +1047,84 @@ async def frontend_upload_documents(
     }
 
 
+@router.post("/api/documents/markdown")
+async def frontend_upload_markdown_document(
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    blocking: bool = Query(False),
+) -> dict[str, Any]:
+    content = _markdown_content(payload)
+    config = _server_config(request)
+    store = _metrics_store(request)
+    collection_name = _canonical_collection_name(
+        payload.get("collection_name") or config.elastic_index_name,
+        config,
+    )
+    filename = _markdown_filename(payload)
+    stored_path, size_bytes = _save_markdown_text(content, filename)
+    task_id = uuid4().hex
+    document_metadata = _metadata_for_markdown(payload)
+
+    stored = _state_dict(request, "frontend_collections")
+    deleted = _state_set(request, "frontend_deleted_collections")
+    deleted.discard(collection_name)
+    stored.setdefault(
+        collection_name,
+        {
+            "metadata_schema": list(_DEFAULT_METADATA_SCHEMA),
+            "description": "Collection created from markdown text upload.",
+            "tags": ["ingest-server"],
+            "status": "Active",
+        },
+    )
+
+    job = Job.create(
+        parser_type="docling",
+        input_data={
+            "source": str(payload.get("source") or "elastic-workflow"),
+            "file_name": filename,
+            "file_path": str(stored_path),
+            "mime_type": "text/markdown",
+            "size_bytes": size_bytes,
+            "collection_name": collection_name,
+            "task_id": task_id,
+            "document_metadata": document_metadata,
+        },
+        chunker_type="token",
+        settings={
+            "queue": config.inbound_queue_name,
+            "task_id": task_id,
+            "collection_name": collection_name,
+            "elastic_index_name": collection_name,
+            "blocking": blocking,
+        },
+    )
+    store.create_for_job(job)
+    store.update(
+        job.job_id,
+        task_id=task_id,
+        collection_name=collection_name,
+        document_metadata=document_metadata,
+        deleted=False,
+    )
+    local_queue.put(job)
+
+    return {
+        "message": "Queued markdown document for ingest.",
+        "task_id": task_id,
+        "collection_name": collection_name,
+        "total_documents": 1,
+        "documents": [
+            {
+                "document_id": job.job_id,
+                "document_name": filename,
+                "size_bytes": size_bytes,
+            }
+        ],
+        "failed_documents": [],
+    }
+
+
 @router.delete("/api/documents")
 async def frontend_delete_documents(
     request: Request,
@@ -1076,7 +1221,7 @@ async def frontend_document_summary(
     )
     output_path = job.get("output_path")
     if not output_path and job.get("job_id"):
-        output_path = _output_path_for_document_id(str(job["job_id"]))
+        output_path = _output_path_for_document_id(str(job["job_id"]), config)
     if output_path:
         path = Path(str(output_path))
         if not path.is_absolute():

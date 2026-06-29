@@ -11,6 +11,7 @@ The app expects these paths inside the container:
 | --- | --- | --- |
 | `/uploads` | Uploaded input files | Read/write |
 | `/outputs` | Generated markdown outputs | Read/write |
+| `/datastore/shared-ingest` | Shared-folder ingest root and per-collection outputs | Read/write |
 | `/tokenizer` | Tokenizer folder used by chunking | Read-only |
 | `/docling-models/artifacts` | Docling model artifacts | Read-only |
 | `/docling-models/models/MinerU2.5-Pro-2605-1.2B` | MinerU OCR model folder | Read-only |
@@ -43,6 +44,15 @@ For ingest data, use one writable PV/PVC and subpaths:
 /datastore/ingest/
   uploads/
   outputs/
+```
+
+Shared-folder ingest uses a host path by default:
+
+```text
+/datastore/shared-ingest/
+  <collection-name>/
+    file.pdf
+    output/
 ```
 
 ## Build And Export The Application Images
@@ -193,6 +203,8 @@ volumeMounts:
   - name: ingest-data
     mountPath: /outputs
     subPath: outputs
+  - name: shared-ingest
+    mountPath: /datastore/shared-ingest
   - name: models-llm
     mountPath: /tokenizer
     subPath: tokenizers/qwen3-embedding-4b
@@ -210,6 +222,10 @@ volumes:
     persistentVolumeClaim:
       claimName: models-llm-pvc
       readOnly: true
+  - name: shared-ingest
+    hostPath:
+      path: /datastore/shared-ingest
+      type: DirectoryOrCreate
 ```
 
 To use a different tokenizer, change only the tokenizer `subPath`:
@@ -259,6 +275,10 @@ DOCLING_LAYOUT_BATCH_SIZE=4
 DOCLING_TABLE_BATCH_SIZE=8
 DOCLING_QUEUE_MAX_SIZE=16
 DOCLING_CODE_ENRICHMENT_ENABLED=false
+SHARED_INGEST_DIR=/datastore/shared-ingest
+SHARED_INGEST_ENABLED=true
+SHARED_INGEST_SCAN_INTERVAL_SECONDS=30
+SHARED_INGEST_STABLE_SECONDS=10
 ```
 
 `DOCLING_OCR_ENGINE=easyocr` is still available and expects EasyOCR artifacts
@@ -301,12 +321,12 @@ single worker, lower `DOCLING_LAYOUT_BATCH_SIZE` first.
 ## Download Models On An Internet-Connected Machine
 
 Install the same project dependencies or at least Docling, MinerU utilities,
-Surya, and Hugging Face tools:
+Surya, and the Hugging Face Hub CLI:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install docling mineru-vl-utils==1.0.4 huggingface_hub
+pip install docling mineru-vl-utils==1.0.4 "huggingface_hub[cli]"
 pip install --no-deps surya-ocr==0.20.0
 ```
 
@@ -337,26 +357,26 @@ Download the PP-DocLayoutV3 Hugging Face repository into the exact folder the ap
 mounts:
 
 ```bash
-huggingface-cli download PaddlePaddle/PP-DocLayoutV3_safetensors \
+hf download PaddlePaddle/PP-DocLayoutV3_safetensors \
   --local-dir /datastore/models/docling/pp-doclayout-v3 \
-  --local-dir-use-symlinks False
+  --max-workers 8
 ```
 
 Download the MinerU OCR model into the exact folder the app mounts:
 
 ```bash
-huggingface-cli download opendatalab/MinerU2.5-Pro-2605-1.2B \
+hf download opendatalab/MinerU2.5-Pro-2605-1.2B \
   --local-dir /datastore/models/docling/models/MinerU2.5-Pro-2605-1.2B \
-  --local-dir-use-symlinks False
+  --max-workers 8
 ```
 
 For the Surya vLLM deployment, mirror the Hugging Face model into the folder
 mounted by `k8s/surya-vllm.yaml`:
 
 ```bash
-huggingface-cli download datalab-to/surya-ocr-2 \
+hf download datalab-to/surya-ocr-2 \
   --local-dir /datastore/models/surya/surya-ocr-2 \
-  --local-dir-use-symlinks False
+  --max-workers 8
 ```
 
 The `surya-vllm` pod mounts that folder read-only at `/model` and serves it as
@@ -369,9 +389,9 @@ the backend to use those local files.
 Download the tokenizer folder used by the current deployment:
 
 ```bash
-huggingface-cli download Qwen/Qwen3-Embedding-4B \
+hf download Qwen/Qwen3-Embedding-4B \
   --local-dir /datastore/models/tokenizers/qwen3-embedding-4b \
-  --local-dir-use-symlinks False
+  --max-workers 8
 ```
 
 If the tokenizer comes from another source, place that tokenizer's complete

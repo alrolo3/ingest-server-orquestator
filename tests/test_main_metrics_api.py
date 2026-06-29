@@ -14,6 +14,7 @@ SRC_DIR = PROJECT_ROOT / "src" / "ingest-server-orquestator"
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(SRC_DIR))
 
+from config.config import ServerConfig
 from metrics.job_metrics import JobStage
 from metrics.progress import ProgressReporter
 from metrics.store import JobMetricsStore
@@ -34,6 +35,23 @@ class FakeQueue:
 
     def put(self, job) -> None:
         self.jobs.append(job)
+
+
+def _server_config(shared_ingest_dir: Path) -> ServerConfig:
+    return ServerConfig(
+        app_name="test",
+        environment="test",
+        inbound_queue_name="inbound",
+        worker_max_workers=1,
+        chunk_max_tokens=8192,
+        tokenizer_path=Path("/tmp/tokenizer"),
+        docling_artifacts_path=Path("/tmp/docling-artifacts"),
+        docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+        elastic_index_name="open-rag-embeddings-v4",
+        elastic_hosts=[],
+        shared_ingest_dir=shared_ingest_dir,
+        shared_ingest_enabled=True,
+    )
 
 
 class MetricsApiTest(unittest.TestCase):
@@ -203,6 +221,33 @@ class MetricsApiTest(unittest.TestCase):
         self.assertEqual(output_path, response.path)
         self.assertEqual("text/markdown", response.media_type)
         self.assertIn("Sample%20output.md", response.headers["content-disposition"])
+
+    def test_download_job_output_falls_back_to_shared_root(self) -> None:
+        store = JobMetricsStore()
+        with TemporaryDirectory() as temp_dir:
+            shared_root = Path(temp_dir)
+            request = SimpleNamespace(
+                app=SimpleNamespace(
+                    state=SimpleNamespace(
+                        metrics_store=store,
+                        server_config=_server_config(shared_root),
+                    )
+                )
+            )
+            output_path = (
+                shared_root
+                / "manuals"
+                / "output"
+                / "job-1"
+                / "Manual output.md"
+            )
+            output_path.parent.mkdir(parents=True)
+            output_path.write_text("# Manual\n", encoding="utf-8")
+
+            response = asyncio.run(ingest_job_output(request, "job-1"))
+
+        self.assertEqual(output_path, response.path)
+        self.assertEqual("Manual output.md", response.filename)
 
     def test_download_job_output_rejects_missing_file(self) -> None:
         store = JobMetricsStore()

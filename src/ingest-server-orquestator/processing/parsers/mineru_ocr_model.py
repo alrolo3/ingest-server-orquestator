@@ -117,6 +117,7 @@ class MinerU(BaseOcrModel):
         conv_res: ConversionResult,
         page_batch: Iterable[Page],
     ) -> Iterable[Page]:
+        """Run MinerU extraction on Docling OCR rectangles and attach TextCell results."""
         if not self.enabled:
             yield from page_batch
             return
@@ -173,6 +174,7 @@ class MinerU(BaseOcrModel):
         scale: float,
         confidence: float,
     ) -> TextCell | None:
+        """Convert one normalized MinerU text block into Docling page coordinates."""
         block_type = _block_value(block, "type")
         content = _block_value(block, "content")
         bbox = _block_value(block, "bbox")

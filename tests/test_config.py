@@ -104,6 +104,10 @@ class ServerConfigTest(unittest.TestCase):
             settings.docling_picture_description_url,
         )
         self.assertEqual("Qwen3.5-9B", settings.docling_picture_description_model)
+        self.assertEqual(Path("/datastore/shared-ingest"), settings.shared_ingest_dir)
+        self.assertTrue(settings.shared_ingest_enabled)
+        self.assertEqual(30, settings.shared_ingest_scan_interval_seconds)
+        self.assertEqual(10, settings.shared_ingest_stable_seconds)
 
     def test_server_config_constants_ignore_environment(self) -> None:
         env = {
@@ -219,6 +223,10 @@ class ServerConfigTest(unittest.TestCase):
             "DOCLING_TABLE_MODE": "fast",
             "DOCLING_CODE_ENRICHMENT_ENABLED": "true",
             "DOCLING_FORMULA_ENRICHMENT_ENABLED": "true",
+            "SHARED_INGEST_DIR": "/tmp/shared-ingest",
+            "SHARED_INGEST_ENABLED": "false",
+            "SHARED_INGEST_SCAN_INTERVAL_SECONDS": "0",
+            "SHARED_INGEST_STABLE_SECONDS": "-1",
         }
         with patch.dict(os.environ, env, clear=True):
             config_module._SERVER_CONFIG = None
@@ -298,6 +306,10 @@ class ServerConfigTest(unittest.TestCase):
             settings.docling_picture_description_url,
         )
         self.assertEqual("CustomVLM", settings.docling_picture_description_model)
+        self.assertEqual(Path("/tmp/shared-ingest"), settings.shared_ingest_dir)
+        self.assertFalse(settings.shared_ingest_enabled)
+        self.assertEqual(1, settings.shared_ingest_scan_interval_seconds)
+        self.assertEqual(0, settings.shared_ingest_stable_seconds)
 
     def test_elastic_url_is_single_host_fallback(self) -> None:
         with patch.dict(

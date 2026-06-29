@@ -14,7 +14,7 @@ from typing import Any
 
 import torch
 
-from config.config import get_server_config
+from config.config import ServerConfig, get_server_config
 from config.paths import OUTPUT_DIR
 from dispatcher.elastic.elastic import ElasticsearchDispatch
 from metrics.job_metrics import JobStage
@@ -24,6 +24,8 @@ from model.document_chunk import DocumentChunk
 from processing.chunking.docling_chunker import DoclingChunker
 from processing.parsers.docling_parser import DoclingParser
 from queues.domain.job import Job
+from workers.shared_ingest import shared_output_dir_for_job
+from workers.shared_ingest import update_shared_ingest_state
 
 
 logging.basicConfig(
@@ -73,13 +75,19 @@ def _output_url(job_id: str) -> str:
     return f"/api/v1/ingest/jobs/{job_id}/output"
 
 
-def _job_output_dir(job: Job) -> Path:
+def _job_output_dir(job: Job, server_config: ServerConfig | None = None) -> Path:
+    if server_config is not None and server_config.shared_ingest_enabled:
+        return shared_output_dir_for_job(job, server_config)
     return OUTPUT_DIR / _sanitize_output_title(job.job_id)
 
 
-def _write_markdown_output(job: Job, parsed_document: Any) -> Path:
+def _write_markdown_output(
+    job: Job,
+    parsed_document: Any,
+    server_config: ServerConfig | None = None,
+) -> Path:
     markdown = parsed_document.get_markdown()
-    output_dir = _job_output_dir(job)
+    output_dir = _job_output_dir(job, server_config)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / output_file_name(job, parsed_document)
     path.write_text(markdown, encoding="utf-8")
@@ -91,8 +99,12 @@ def _chunk_output_file_name(chunk: DocumentChunk, index: int, width: int) -> str
     return f"{index:0{width}d}-{chunk_id}.json"
 
 
-def _write_chunk_outputs(job: Job, chunks: list[DocumentChunk]) -> Path:
-    chunks_dir = _job_output_dir(job) / "chunks"
+def _write_chunk_outputs(
+    job: Job,
+    chunks: list[DocumentChunk],
+    server_config: ServerConfig | None = None,
+) -> Path:
+    chunks_dir = _job_output_dir(job, server_config) / "chunks"
     chunks_dir.mkdir(parents=True, exist_ok=True)
     width = max(4, len(str(len(chunks))))
 
@@ -159,8 +171,8 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
 
         current_stage = JobStage.OUTPUTTING
         progress.mark_stage(current_stage, "Writing markdown and chunk outputs.")
-        output_path = _write_markdown_output(job, parsed_document)
-        chunks_dir = _write_chunk_outputs(job, chunks)
+        output_path = _write_markdown_output(job, parsed_document, settings)
+        chunks_dir = _write_chunk_outputs(job, chunks, settings)
         progress.set_output(
             file_name=output_path.name,
             path=str(output_path),
@@ -187,10 +199,12 @@ def job_runner(job: Job, metrics_store: JobMetricsStore | None = None) -> None:
 
         progress.record_timing("total", perf_counter() - job_started_at)
         progress.mark_done("Job done: chunks sent to Elasticsearch.")
+        update_shared_ingest_state(job, "done")
         LOGGER.info("Finished job job_id=%s", job.job_id)
     except Exception as exc:
         serializable_error = _serializable_job_error(exc)
         progress.record_timing("total", perf_counter() - job_started_at)
         progress.mark_failed(str(serializable_error), stage=current_stage)
+        update_shared_ingest_state(job, "failed", error=str(serializable_error))
         LOGGER.exception("Job failed job_id=%s stage=%s", job.job_id, current_stage)
         raise serializable_error from None

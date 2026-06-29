@@ -12,6 +12,10 @@ services:
       APP_ENV: "${INGEST_APP_ENV:-local}"
       INGEST_LOG_LEVEL: "${INGEST_LOG_LEVEL:-INFO}"
       INGEST_WORKER_MAX_WORKERS: "${INGEST_WORKER_MAX_WORKERS:-1}"
+      SHARED_INGEST_DIR: "${INGEST_SHARED_INGEST_DIR:-/datastore/shared-ingest}"
+      SHARED_INGEST_ENABLED: "${INGEST_SHARED_INGEST_ENABLED:-true}"
+      SHARED_INGEST_SCAN_INTERVAL_SECONDS: "${INGEST_SHARED_INGEST_SCAN_INTERVAL_SECONDS:-30}"
+      SHARED_INGEST_STABLE_SECONDS: "${INGEST_SHARED_INGEST_STABLE_SECONDS:-10}"
       DOCLING_PICTURE_DESCRIPTION_URL: "${INGEST_DOCLING_PICTURE_DESCRIPTION_URL:-http://vllm-qwen35-9b:8007/v1/chat/completions}"
       DOCLING_PICTURE_DESCRIPTION_MODEL: "${INGEST_DOCLING_PICTURE_DESCRIPTION_MODEL:-Qwen3.5-9B}"
       DOCLING_OCR_ENABLED: "${INGEST_DOCLING_OCR_ENABLED:-true}"
@@ -71,6 +75,7 @@ services:
     volumes:
       - ${EXP101_DATASTORE_ROOT:-/datastore/experimento-101}/ingest-uploads:/uploads
       - ${EXP101_DATASTORE_ROOT:-/datastore/experimento-101}/ingest-outputs:/outputs
+      - ${INGEST_SHARED_INGEST_DIR:-/datastore/shared-ingest}:${INGEST_SHARED_INGEST_DIR:-/datastore/shared-ingest}
       - /datastore/models/tokenizers/qwen3-embedding-4b:/tokenizer:ro
       - /datastore/models/docling:/docling-models:ro
 

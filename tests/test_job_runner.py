@@ -10,6 +10,7 @@ from unittest.mock import patch
 SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "ingest-server-orquestator"
 sys.path.insert(0, str(SRC_DIR))
 
+from config.config import ServerConfig
 from model.document_chunk import DocumentChunk
 from metrics.store import JobMetricsStore
 from queues.domain.job import Job
@@ -20,6 +21,23 @@ from workers.job_runner import (
     job_runner,
     output_file_name,
 )
+
+
+def _server_config(shared_ingest_dir: Path) -> ServerConfig:
+    return ServerConfig(
+        app_name="test",
+        environment="test",
+        inbound_queue_name="queue",
+        worker_max_workers=1,
+        chunk_max_tokens=8192,
+        tokenizer_path=Path("/tmp/tokenizer"),
+        docling_artifacts_path=Path("/tmp/docling-artifacts"),
+        docling_pp_layout_model_path=Path("/tmp/pp-doclayout-v3"),
+        elastic_index_name="open-rag-embeddings-v4",
+        elastic_hosts=[],
+        shared_ingest_dir=shared_ingest_dir,
+        shared_ingest_enabled=True,
+    )
 
 
 class UnpickleableError(Exception):
@@ -200,9 +218,10 @@ class JobRunnerTest(unittest.TestCase):
 
         metrics = JobMetricsStore()
         with TemporaryDirectory() as temp_dir:
-            output_root = Path(temp_dir)
+            shared_root = Path(temp_dir)
+            settings = _server_config(shared_root)
             with (
-                patch("workers.job_runner.OUTPUT_DIR", output_root),
+                patch("workers.job_runner.get_server_config", return_value=settings),
                 patch("workers.job_runner.configure_torch_cuda_device"),
                 patch("workers.job_runner.torch.set_float32_matmul_precision"),
                 patch("workers.job_runner.DoclingParser", return_value=FakeParser()),
@@ -217,8 +236,14 @@ class JobRunnerTest(unittest.TestCase):
                 ):
                     job_runner(job, metrics)
 
-            output_path = output_root / "job-1" / "My Document output.md"
-            chunks_dir = output_root / "job-1" / "chunks"
+            output_path = (
+                shared_root
+                / "embeddings-v4"
+                / "output"
+                / "job-1"
+                / "My Document output.md"
+            )
+            chunks_dir = output_path.parent / "chunks"
             chunk_path = chunks_dir / "0001-chunk-1.json"
             self.assertEqual("# My Document\n", output_path.read_text(encoding="utf-8"))
             chunk_output = json.loads(chunk_path.read_text(encoding="utf-8"))
@@ -282,8 +307,9 @@ class JobRunnerTest(unittest.TestCase):
 
         metrics = JobMetricsStore()
         with TemporaryDirectory() as temp_dir:
+            settings = _server_config(Path(temp_dir))
             with (
-                patch("workers.job_runner.OUTPUT_DIR", Path(temp_dir)),
+                patch("workers.job_runner.get_server_config", return_value=settings),
                 patch("workers.job_runner.configure_torch_cuda_device"),
                 patch("workers.job_runner.torch.set_float32_matmul_precision"),
                 patch("workers.job_runner.DoclingParser", return_value=FakeParser()),
